@@ -45,6 +45,11 @@ const router = createRouter({
           component: () => import('@/views/direct/DirectInfo.vue')
         },
         {
+          path: '/direct/history',
+          name: 'directHistory',
+          component: () => import('@/views/direct/DirectHistory.vue')
+        },
+        {
           path: '/test',
           name: 'test',
           component: () => import('@/views/TestPage.vue')

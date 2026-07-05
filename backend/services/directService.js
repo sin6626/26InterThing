@@ -1,6 +1,7 @@
 const mqttClient = require("../mqtt")
 const heartbeat = require("../mqtt/mqtt_hander/heartbeat")
 const { buildDeviceCommandPayload } = require("../mqtt/commandMapper")
+const directHistoryRepository = require("../repositories/directHistoryRepository")
 const directRepository = require("../repositories/directRepository")
 const { buildTree } = require("../utils/directTree")
 const { createTimeSyncService } = require("./timeSyncService")
@@ -66,7 +67,19 @@ const updateGlobalDirect = async ({ config_id, f_type, value }) => {
   // 先写数据库，保证页面刷新后能看到最新值；
   // MQTT 下发作为异步副作用继续执行。
   const newValue = normalizeValue(value, f_type)
+  const [oldValue, config] = await Promise.all([
+    directRepository.getGlobalDirectValue(config_id),
+    directRepository.getDirectConfigById(config_id),
+  ])
   await directRepository.upsertGlobalDirect(config_id, newValue)
+  await directHistoryRepository.insertDirectHistory({
+    config_id,
+    direct_name: config?.t_name,
+    direct_type: config?.topic || "global",
+    new_value: newValue,
+    old_value: oldValue,
+    remark: "全局指令",
+  })
 
   directRepository
     .getTopicByConfigId(config_id)
@@ -113,24 +126,68 @@ const dispatchDeviceCommand = async (dNo, configId, newValue) => {
 const updateDeviceDirect = async (dNo, { config_id, f_type, value }) => {
   // 单设备值存在就 update，不存在就 insert。
   const newValue = normalizeValue(value, f_type)
+  const [oldValue, config] = await Promise.all([
+    directRepository.getDeviceDirectValue(config_id, dNo),
+    directRepository.getDirectConfigById(config_id),
+  ])
   const results = await directRepository.updateDeviceDirectValue(config_id, newValue, dNo)
 
   if (results.affectedRows === 0) {
     await directRepository.insertDeviceDirectValue(config_id, newValue, dNo)
   }
 
+  await directHistoryRepository.insertDirectHistory({
+    config_id,
+    d_no: dNo,
+    direct_name: config?.t_name,
+    direct_type: config?.topic || "device",
+    new_value: newValue,
+    old_value: oldValue,
+    remark: "设备指令",
+  })
+
   dispatchDeviceCommand(dNo, config_id, newValue).catch((error) => {
     console.error("设备指令下发失败:", error)
   })
 }
 
-const updateTime = (time) => {
+const updateTime = async (time) => {
   // 手动时间同步本质上也是一条“特殊指令”，只是 topic 固定为时间同步主题。
-  return timeSyncService.updateTime(time)
+  await timeSyncService.updateTime(time)
+  await directHistoryRepository.insertDirectHistory({
+    direct_name: "时间同步",
+    direct_type: "time_sync",
+    new_value: time || "当前时间",
+    remark: "时间同步",
+  })
+}
+
+const getDirectHistory = async (query) => {
+  const result = await directHistoryRepository.getDirectHistory(query)
+  return {
+    status: 0,
+    message: "查询成功",
+    data: result.rows,
+    total: result.total,
+  }
+}
+
+const getDirectTypes = async () => {
+  const rows = await directRepository.getDirectTypes()
+  return {
+    status: 0,
+    message: "查询成功",
+    data: [
+      ...rows,
+      { value: "time_sync", label: "时间同步" },
+    ],
+  }
 }
 
 module.exports = {
+  getDirectHistory,
   getDirectTrees,
+  getDirectTypes,
   updateDeviceDirect,
   updateGlobalDirect,
   updateTime,

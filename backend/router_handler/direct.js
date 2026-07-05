@@ -57,3 +57,21 @@ exports.updateTime = async (req, res) => {
     res.cc(error)
   }
 }
+
+exports.history = async (req, res) => {
+  try {
+    const data = await directService.getDirectHistory(req.query)
+    res.send(data)
+  } catch (error) {
+    res.cc(error)
+  }
+}
+
+exports.types = async (req, res) => {
+  try {
+    const data = await directService.getDirectTypes()
+    res.send(data)
+  } catch (error) {
+    res.cc(error)
+  }
+}

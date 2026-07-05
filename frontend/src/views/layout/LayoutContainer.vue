@@ -178,6 +178,13 @@ onBeforeUnmount(() => {
           <span>指令信息</span>
         </el-menu-item>
 
+        <el-menu-item index="/direct/history">
+          <el-icon>
+            <ChatLineRound />
+          </el-icon>
+          <span>操作历史</span>
+        </el-menu-item>
+
       </el-menu>
     </el-aside>
 

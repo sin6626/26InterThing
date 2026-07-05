@@ -1,7 +1,8 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import dayjs from 'dayjs'
-import { getEchartsSensorByQuery, getSensorDataPast } from '@/api/sensor'
+import { ElMessage } from 'element-plus'
+import { getEchartsSensorByQuery, getSensorDataPast, recognizeSensorRows } from '@/api/sensor'
 import { useDeviceNumbers } from '@/composables/useDeviceNumbers'
 import HistoryDataChart from '@/components/HistoryDataChart.vue'
 import { useSwitchStore } from '@/stores/switch'
@@ -16,6 +17,8 @@ const selectedDeviceNo = ref('')
 const chartData = ref({ xAxisData: [], seriesData: [] })
 const chartPointLimit = ref(10)
 const chartType = ref('line')
+const recognizing = ref(false)
+const selectedRows = ref([])
 
 const params = ref({
   pagenum: 1,
@@ -65,6 +68,25 @@ const query = async () => {
   }
 
   await Promise.all([getList(), getChart()])
+}
+
+const handleSelectionChange = (rows) => {
+  selectedRows.value = rows
+}
+
+const recognizeSelected = async () => {
+  if (!selectedRows.value.length) {
+    ElMessage.warning('请先勾选需要识别的数据')
+    return
+  }
+
+  recognizing.value = true
+  try {
+    const res = await recognizeSensorRows(selectedRows.value)
+    ElMessage.success(res.message || '识别任务已提交')
+  } finally {
+    recognizing.value = false
+  }
 }
 
 const handleSizeChange = async (val) => {
@@ -124,6 +146,14 @@ onMounted(async () => {
         />
 
         <el-button type="primary" @click="query">查询</el-button>
+        <el-button
+          type="success"
+          :disabled="!selectedRows.length"
+          :loading="recognizing"
+          @click="recognizeSelected"
+        >
+          识别
+        </el-button>
         <el-select v-model="chartType" style="width: 140px">
           <el-option label="折线图" value="line" />
           <el-option label="柱状图" value="bar" />
@@ -132,7 +162,8 @@ onMounted(async () => {
       </div>
     </template>
 
-    <el-table :data="sensorData">
+    <el-table :data="sensorData" @selection-change="handleSelectionChange">
+      <el-table-column type="selection" width="48" />
       <el-table-column label="序号" type="index" width="60px" />
       <el-table-column v-if="switchStore.value" prop="编号" label="编号" width="100" />
 

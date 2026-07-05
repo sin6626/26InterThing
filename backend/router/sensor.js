@@ -21,6 +21,9 @@ router.get("/sensor/sensorChart/:tableprefix", data_hander.sensorChart);
 // 获取历史数据的路由
 router.get("/sensor/past/:tableprefix", data_hander.past);
 
+// 提交勾选的传感器历史数据，后续在这里对接智能判定服务。
+router.post("/sensor/recognize", data_hander.recognize);
+
 //获取错误的数据
 router.get("/error", data_hander.error);
 
@@ -51,6 +54,10 @@ router.get("/deviceStatus", device_hander.deviceStatus);  // 新增
 
 // 获取指令信息的路由
 router.get("/direct/:d_no", direct_hander.direct);
+
+// 获取指令类型选项和操作历史。
+router.get("/direct/types/options", direct_hander.types);
+router.get("/direct/history/list", direct_hander.history);
 
 // 更新设备单独指令
 router.post("/updateDirect/:d_no", direct_hander.updateDirect);

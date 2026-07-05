@@ -1,4 +1,5 @@
 const dataService = require("../services/dataService")
+const { summarizeRecognitionSelection } = require("../services/recognitionService")
 
 // 查询“某一类数据的最新一条”，给实时页右侧的信息卡片使用。
 exports.realtime = async (req, res) => {
@@ -49,6 +50,19 @@ exports.error = async (req, res) => {
   try {
     const result = await dataService.getErrorData(req.query)
     res.send(result)
+  } catch (error) {
+    res.cc(error)
+  }
+}
+
+exports.recognize = async (req, res) => {
+  try {
+    const result = summarizeRecognitionSelection(req.body?.rows)
+    res.send({
+      status: 0,
+      message: result.message,
+      data: result,
+    })
   } catch (error) {
     res.cc(error)
   }

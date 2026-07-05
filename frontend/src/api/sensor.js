@@ -26,6 +26,11 @@ export const getSensorDataPast = (params, tableprefix) => {
   })
 }
 
+// 提交勾选的传感器历史数据，后端后续会对接智能判定服务。
+export const recognizeSensorRows = (rows) => {
+  return request.post('/api/sensor/recognize', { rows })
+}
+
 // 错误记录列表。
 export const getErrorData = (params) => {
   return request.get(`/api/error`, {
@@ -80,6 +85,18 @@ export const getDeviceStatus = () => {
 // 获取直控页树形指令数据。
 export const getDirectInfo = (d_no) => {
   return request.get(`/api/direct/${d_no}`)
+}
+
+// 指令类型选项来自后端指令配置表。
+export const getDirectTypes = () => {
+  return request.get('/api/direct/types/options')
+}
+
+// 指令操作历史查询。
+export const getDirectHistory = (params) => {
+  return request.get('/api/direct/history/list', {
+    params,
+  })
 }
 
 // 更新单设备指令。

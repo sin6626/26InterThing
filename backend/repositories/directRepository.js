@@ -73,11 +73,35 @@ const insertDeviceDirectValue = (configId, value, dNo) => {
   return query(sql, [configId, value, dNo])
 }
 
+const getDirectConfigById = async (configId) => {
+  const sql = `select id, t_name, topic from t_direct_config where id = ?`
+  const rows = await query(sql, [configId])
+  return rows[0] || null
+}
+
 const getTopicByConfigId = async (configId) => {
   // 指令下发时，真正发到哪个 MQTT 主题，取决于这里查到的 topic。
   const sql = `select topic from t_direct_config where id = ?`
   const rows = await query(sql, [configId])
   return rows[0]?.topic || null
+}
+
+const getGlobalDirectValue = async (configId) => {
+  const sql = `select value from t_direct_global where config_id = ?`
+  const rows = await query(sql, [configId])
+  return rows[0]?.value ?? null
+}
+
+const getDeviceDirectValue = async (configId, dNo) => {
+  const sql = `
+    select COALESCE(d.value, g.value) as value
+    from t_direct_config c
+    left join t_direct d on d.config_id = c.id and d.d_no = ?
+    left join t_direct_global g on g.config_id = c.id
+    where c.id = ?
+  `
+  const rows = await query(sql, [dNo, configId])
+  return rows[0]?.value ?? null
 }
 
 const getAllDeviceNumbers = async () => {
@@ -87,10 +111,24 @@ const getAllDeviceNumbers = async () => {
   return rows.map((row) => row.number)
 }
 
+const getDirectTypes = async () => {
+  const sql = `
+    select distinct topic as value, t_name as label
+    from t_direct_config
+    where topic is not null and trim(topic) <> ''
+    order by id
+  `
+  return query(sql)
+}
+
 module.exports = {
   getAllDeviceNumbers,
+  getDeviceDirectValue,
   getDeviceConfigRows,
+  getDirectConfigById,
+  getDirectTypes,
   getGlobalConfigRows,
+  getGlobalDirectValue,
   getTopicByConfigId,
   insertDeviceDirectValue,
   updateDeviceDirectValue,
