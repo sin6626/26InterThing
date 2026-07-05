@@ -1,0 +1,66 @@
+const express = require("express");
+const router = express.Router();
+
+// 这个文件只负责“定义路由和 handler 的对应关系”，
+// 具体业务逻辑放在 router_handler 和 service 里。
+
+// 导入数据(传感器, 行为, 错误)处理的模块
+const data_hander = require("../router_handler/data");
+// 导入设备处理模块
+const device_hander = require("../router_handler/device");
+//导入指令处理模块
+const direct_hander = require("../router_handler/direct");
+// 导入更新
+
+// 获取单个实时数据的数据的路由
+router.get("/sensor/realtime/:tableprefix", data_hander.realtime);
+
+// 获取图表数据的路由
+router.get("/sensor/sensorChart/:tableprefix", data_hander.sensorChart);
+
+// 获取历史数据的路由
+router.get("/sensor/past/:tableprefix", data_hander.past);
+
+//获取错误的数据
+router.get("/error", data_hander.error);
+
+// ------------------------------------------
+
+// 获取/查询设备信息的路由
+router.get("/devices", device_hander.devices);
+
+// 获取设备编号列表（用于前端动态选择器）
+router.get("/deviceNumbers", device_hander.deviceNumbers);
+
+//回显设备信息的接口
+router.get("/devicesInfo/:number", device_hander.devicesInfo);
+
+// 提交设备信息的接口
+router.post("/updateDevice", device_hander.updateDevice);
+
+// 新增设备信息的接口
+router.post("/addDevice", device_hander.addDevice);
+
+// 删除设备的接口
+router.get("/deleteDevice/:id", device_hander.deleteDevice);
+
+// 获取所有设备状态
+router.get("/deviceStatus", device_hander.deviceStatus);  // 新增
+
+// ---------------------------------------------------
+
+// 获取指令信息的路由
+router.get("/direct/:d_no", direct_hander.direct);
+
+// 更新设备单独指令
+router.post("/updateDirect/:d_no", direct_hander.updateDirect);
+
+// 更新全局指令
+router.post("/updateDirectGlobal", direct_hander.updateGlobalDirect);
+
+// ---------------------------------------------------
+// 时间同步相关接口：
+// 指令页面手动更新时间会先打到这里，再由应用层下发 MQTT 时间消息。
+router.post("/updateTime", direct_hander.updateTime);
+
+module.exports = router;

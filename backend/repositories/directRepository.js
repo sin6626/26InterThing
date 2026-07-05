@@ -1,0 +1,98 @@
+const { query } = require("./query")
+
+// Repository 层只做一件事：封装和 t_direct / t_direct_config 相关的 SQL。
+// 这样 service 层可以专心处理业务流程，不用直接拼数据库细节。
+
+const globalSql = `
+  SELECT
+    c.id AS config_id,
+    c.id,
+    c.ref_id,
+    c.ref_value,
+    c.t_name,
+    c.f_type,
+    c.min,
+    c.max,
+    c.topic,
+    c.options,
+    COALESCE(g.value, 'off') AS value,
+    p.value AS papa_value
+  FROM t_direct_config c
+  LEFT JOIN t_direct_global g ON g.config_id = c.id
+  LEFT JOIN t_direct_global p ON p.config_id = c.ref_id
+  ORDER BY c.id
+`
+
+const deviceSql = `
+  SELECT
+    c.id AS config_id,
+    c.id,
+    c.ref_id,
+    c.ref_value,
+    c.t_name,
+    c.f_type,
+    c.min,
+    c.max,
+    c.topic,
+    c.options,
+    COALESCE(d.value, g.value, 'off') AS value,
+    COALESCE(pd.value, pg.value) AS papa_value
+  FROM t_direct_config c
+  LEFT JOIN t_direct d ON d.config_id = c.id AND d.d_no = ?
+  LEFT JOIN t_direct pd ON pd.config_id = c.ref_id AND pd.d_no = ?
+  LEFT JOIN t_direct_global g ON g.config_id = c.id
+  LEFT JOIN t_direct_global pg ON pg.config_id = c.ref_id
+  ORDER BY c.id
+`
+
+// 查询“全局指令树”的原始行数据。
+const getGlobalConfigRows = () => query(globalSql)
+
+// 查询“某台设备的指令树”原始行数据。
+const getDeviceConfigRows = (dNo) => query(deviceSql, [dNo, dNo])
+
+const upsertGlobalDirect = (configId, value) => {
+  // 全局指令值用 UPSERT，避免调用方先查再写。
+  const sql = `
+    INSERT INTO t_direct_global (config_id, value)
+    VALUES (?, ?)
+    ON DUPLICATE KEY UPDATE value = VALUES(value)
+  `
+
+  return query(sql, [configId, value])
+}
+
+const updateDeviceDirectValue = (configId, value, dNo) => {
+  // 单设备指令优先 update，如果 affectedRows=0，上层会再补一条 insert。
+  const sql = `update t_direct set value = ? where config_id = ? and d_no = ?`
+  return query(sql, [value, configId, dNo])
+}
+
+const insertDeviceDirectValue = (configId, value, dNo) => {
+  const sql = `insert into t_direct (config_id, value, d_no) values (?, ?, ?)`
+  return query(sql, [configId, value, dNo])
+}
+
+const getTopicByConfigId = async (configId) => {
+  // 指令下发时，真正发到哪个 MQTT 主题，取决于这里查到的 topic。
+  const sql = `select topic from t_direct_config where id = ?`
+  const rows = await query(sql, [configId])
+  return rows[0]?.topic || null
+}
+
+const getAllDeviceNumbers = async () => {
+  // 全局指令需要知道“当前系统里有哪些设备”。
+  const sql = `SELECT DISTINCT number FROM t_device WHERE number IS NOT NULL AND TRIM(number) <> ''`
+  const rows = await query(sql)
+  return rows.map((row) => row.number)
+}
+
+module.exports = {
+  getAllDeviceNumbers,
+  getDeviceConfigRows,
+  getGlobalConfigRows,
+  getTopicByConfigId,
+  insertDeviceDirectValue,
+  updateDeviceDirectValue,
+  upsertGlobalDirect,
+}
