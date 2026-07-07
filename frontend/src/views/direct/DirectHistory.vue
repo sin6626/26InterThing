@@ -16,6 +16,7 @@ const params = ref({
 })
 
 const formatDateTime = (time) => dayjs(time).format('YYYY-MM-DD HH:mm:ss')
+const formatOperateTime = (time) => (time ? dayjs(time).format('YYYY-MM-DD HH:mm:ss') : '暂无')
 
 const buildQueryParams = () => ({
   ...params.value,
@@ -88,7 +89,11 @@ onMounted(async () => {
 
     <el-table :data="historyRows">
       <el-table-column label="序号" type="index" width="60" />
-      <el-table-column prop="operate_time" label="操作时间" min-width="170" />
+      <el-table-column prop="operate_time" label="操作时间" min-width="170">
+        <template #default="scope">
+          {{ formatOperateTime(scope.row.operate_time) }}
+        </template>
+      </el-table-column>
       <el-table-column prop="direct_name" label="指令名称" min-width="150" />
       <el-table-column prop="direct_type" label="指令类型" min-width="130" />
       <el-table-column prop="d_no" label="设备编号" width="110">
@@ -98,7 +103,7 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column prop="old_value" label="原值" min-width="110" />
       <el-table-column prop="new_value" label="新值" min-width="110" />
-      <el-table-column prop="remark" label="备注" min-width="120" />
+      <el-table-column prop="remark" label="来源" min-width="140" />
     </el-table>
 
     <el-pagination

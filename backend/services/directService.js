@@ -78,7 +78,7 @@ const updateGlobalDirect = async ({ config_id, f_type, value }) => {
     direct_type: config?.topic || "global",
     new_value: newValue,
     old_value: oldValue,
-    remark: "全局指令",
+    remark: "Web手动控制",
   })
 
   directRepository
@@ -143,7 +143,7 @@ const updateDeviceDirect = async (dNo, { config_id, f_type, value }) => {
     direct_type: config?.topic || "device",
     new_value: newValue,
     old_value: oldValue,
-    remark: "设备指令",
+    remark: "Web手动控制",
   })
 
   dispatchDeviceCommand(dNo, config_id, newValue).catch((error) => {
@@ -158,7 +158,7 @@ const updateTime = async (time) => {
     direct_name: "时间同步",
     direct_type: "time_sync",
     new_value: time || "当前时间",
-    remark: "时间同步",
+    remark: "设备时间同步",
   })
 }
 
