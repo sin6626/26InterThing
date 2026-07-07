@@ -1,4 +1,5 @@
 const { query } = require("./query")
+const { buildDirectTypesSql } = require("./directRepositorySql")
 
 // Repository 层只做一件事：封装和 t_direct / t_direct_config 相关的 SQL。
 // 这样 service 层可以专心处理业务流程，不用直接拼数据库细节。
@@ -112,13 +113,7 @@ const getAllDeviceNumbers = async () => {
 }
 
 const getDirectTypes = async () => {
-  const sql = `
-    select distinct topic as value, t_name as label
-    from t_direct_config
-    where topic is not null and trim(topic) <> ''
-    order by id
-  `
-  return query(sql)
+  return query(buildDirectTypesSql())
 }
 
 module.exports = {
