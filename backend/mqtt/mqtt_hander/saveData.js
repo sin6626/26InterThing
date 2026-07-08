@@ -5,20 +5,27 @@ const {
   resolveMappedErrorMessage,
 } = require("../../services/errorMessageMapping")
 
+const parsePayloadWithDevice = (payload, label, callback) => {
+  try {
+    const data = JSON.parse(payload.toString())
+    if (!data.d_no) {
+      throw new Error(`${label}缺少d_no`)
+    }
+    return data
+  } catch (e) {
+    console.log(`${label}JSON解析失败:`, e.message)
+    callback?.(e)
+    return null
+  }
+}
+
 // 传感器数据字段是动态映射的，所以要先查字段定义，再按顺序组装 SQL。
 exports.saveSensorData = (topic, payload, callback) => {
-  const d_no = topic.split("/")[1]
-
-  let data
-  try {
-    data = JSON.parse(payload.toString())
-  } catch (e) {
-    console.log('传感器数据JSON解析失败:', e.message)
-    return callback?.(e)
-  }
+  const data = parsePayloadWithDevice(payload, "传感器数据", callback)
+  if (!data) return
 
   const params = []
-  params.push(d_no)
+  params.push(data.d_no)
 
   const sql1 = 'select * from t_sensor_field_mapper order by db_name'
   db.query(sql1, (err, fieldMapper) => {
@@ -69,18 +76,11 @@ exports.saveSensorData = (topic, payload, callback) => {
 
 // 行为数据与传感器数据流程类似，只是没有 vstatus 字段。
 exports.savebehaviorData = (topic, payload, callback) => {
-  const d_no = topic.split("/")[1]
-
-  let data
-  try {
-    data = JSON.parse(payload.toString())
-  } catch (e) {
-    console.log('行为数据JSON解析失败:', e.message)
-    return callback?.(e)
-  }
+  const data = parsePayloadWithDevice(payload, "行为数据", callback)
+  if (!data) return
 
   const params = []
-  params.push(d_no)
+  params.push(data.d_no)
 
   const sql1 = 'select * from t_behavior_field_mapper order by db_name'
   db.query(sql1, (err, fieldMapper) => {
@@ -126,15 +126,8 @@ exports.savebehaviorData = (topic, payload, callback) => {
 
 // 错误信息优先做一层应用侧中文映射，避免前端直接看到原始错误码。
 exports.saveErrorData = (topic, payload, callback) => {
-  const d_no = topic.split("/")[1]
-
-  let data
-  try {
-    data = JSON.parse(payload.toString())
-  } catch (e) {
-    console.log('错误数据JSON解析失败:', e.message)
-    return callback?.(e)
-  }
+  const data = parsePayloadWithDevice(payload, "错误数据", callback)
+  if (!data) return
 
   resolveMappedErrorMessage({
     e_no: data['e_no'],
@@ -146,12 +139,11 @@ exports.saveErrorData = (topic, payload, callback) => {
     .then((mappedMessage) => {
       const normalizedData = {
         ...data,
-        d_no,
         e_msg: mappedMessage,
       }
 
       const params = []
-      params.push(d_no)
+      params.push(data.d_no)
       params.push(normalizedData['c_time'])
       params.push(normalizedData['e_msg'])
       params.push(normalizedData['e_no'])

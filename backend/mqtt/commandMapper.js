@@ -106,12 +106,20 @@ const mapByConfigId = (configId, value) => {
   }
 }
 
-const buildDeviceCommandPayload = ({ config_id, topic, value }) => {
+const buildDeviceCommandPayload = ({ d_no, config_id, topic, value }) => {
   // 优先级：
   // 1. topic 命中
   // 2. config_id 命中
   // 3. 都没命中时退回成 { value }
-  return mapByTopic(topic, value) || mapByConfigId(config_id, value) || { value }
+  const payload = mapByTopic(topic, value) || mapByConfigId(config_id, value) || { value }
+  if (!d_no) return payload
+
+  return {
+    d_no,
+    ...(config_id !== undefined ? { config_id } : {}),
+    ...(topic ? { topic } : {}),
+    ...payload,
+  }
 }
 
 module.exports = {

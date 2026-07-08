@@ -3,7 +3,7 @@ const assert = require("node:assert/strict")
 
 const { createTimeSyncService } = require("../services/timeSyncService")
 
-test("handleTimeRequest publishes current time to the requesting device topic", async () => {
+test("handleTimeRequest publishes current time for the requesting device", async () => {
   const calls = []
   const service = createTimeSyncService({
     mqttClient: {

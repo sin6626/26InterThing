@@ -1,7 +1,7 @@
 // MQTT 模块入口：
 // 1. 负责连接 Broker
 // 2. 负责订阅设备上报主题
-// 3. 负责把消息分发给 heartbeat / saveData / pid / direct 等模块
+// 3. 负责把消息分发给 heartbeat / saveData / direct 等模块
 const mqtt = require("mqtt")
 const heartbeat = require("./mqtt_hander/heartbeat")
 const save = require("./mqtt_hander/saveData")
@@ -12,22 +12,14 @@ const { registerSubscriptions } = require("./subscriptions")
 const { createTopicDispatcher } = require("./topicDispatcher")
 const { createTimeSyncService } = require("../services/timeSyncService")
 
-// PID 处理是后来扩展出来的功能，这里用 try/catch 兼容老环境。
-let pidHandler = null
-try {
-  pidHandler = require("./mqtt_hander/pid")
-} catch {
-  pidHandler = null
-}
-
 const env = process.env
 
 const mqttOptions = {
   clientId: env.MQTT_CLIENT_ID || "portfolio_admin",
   host: env.MQTT_HOST || "localhost",
   port: Number(env.MQTT_PORT || 1883),
-  username: env.MQTT_USERNAME || "",
-  password: env.MQTT_PASSWORD || "",
+  username: env.MQTT_USERNAME || "sin",
+  password: env.MQTT_PASSWORD || "1234",
 }
 
 // 建立 MQTT 连接后，整个应用层就具备了“和设备侧双向通信”的能力。
@@ -49,7 +41,6 @@ const handleIncomingMessage = createTopicDispatcher({
   broadcastToClients,
   directHandler: direct,
   heartbeatHandler: heartbeat,
-  pidHandler,
   saveHandler: save,
   timeSyncHandler,
 })
@@ -57,7 +48,7 @@ const handleIncomingMessage = createTopicDispatcher({
 // 连接成功后再订阅主题，避免应用启动时就盲目订阅。
 mqttClient.on("connect", () => {
   console.log("MQTT连接成功")
-  registerSubscriptions(mqttClient, pidHandler)
+  registerSubscriptions(mqttClient)
 })
 
 // 所有原始 MQTT 消息都会先走这里，再交给 topicDispatcher 做分类处理。

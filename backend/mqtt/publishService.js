@@ -81,16 +81,8 @@ const attachPublishHelpers = (mqttClient) => {
           continue
         }
 
-        if (!msg.topic) {
-          console.error(
-            `设备 ${deviceId} 第${index + 1}条离线消息缺少topic字段`,
-            msg,
-          )
-          continue
-        }
-
-        const topic = `device/${msg.topic}/direct`
-        const payload = msg.commandPayload || msg
+        const topic = "device/direct"
+        const payload = { d_no: deviceId, ...(msg.commandPayload || msg) }
         await mqttClient.publishToDevice(topic, payload)
 
         if (index < messages.length - 1) {
@@ -112,9 +104,9 @@ const attachPublishHelpers = (mqttClient) => {
     return publishReliable("device/updateTime", time)
   }
 
-  // 定向时间同步：走 device/{d_no}/updateTime。
+  // 定向时间同步：设备号放 payload，topic 不再区分设备。
   mqttClient.updateDeviceTime = async (deviceId, time) => {
-    return publishReliable(`device/${deviceId}/updateTime`, time)
+    return publishReliable("device/updateTime", { ...time, d_no: deviceId })
   }
 }
 

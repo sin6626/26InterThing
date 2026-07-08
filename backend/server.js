@@ -6,7 +6,6 @@ const express = require("express")
 const cors = require("cors")
 const dbPool = require("./db") // 引入数据库连接池
 const mqttClient = require("./mqtt") // 引入 MQTT 客户端
-const { ensureBehaviorPidMapping } = require("./services/behaviorPid")
 const { ensureErrorMessageMappings } = require("./services/errorMessageMapping")
 const { ensureDirectHistoryTable } = require("./repositories/directHistoryRepository")
 // const mqttClientTest = require('./mqtt/sensorTest') // 引入 MQTT 测试心跳的客户端
@@ -70,14 +69,6 @@ const sensorRouter = require("./router/sensor.js")
 app.use("/api", sensorRouter)
 
 // 启动时确保一些“运行依赖的数据映射”已经准备好。
-ensureBehaviorPidMapping()
-  .then(() => {
-    console.log("行为数据 PID 映射已就绪")
-  })
-  .catch((error) => {
-    console.error("初始化行为数据 PID 映射失败:", error.message)
-  })
-
 ensureErrorMessageMappings()
   .then(() => {
     console.log("错误码映射表已就绪")

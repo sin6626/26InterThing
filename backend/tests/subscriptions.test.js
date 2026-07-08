@@ -3,7 +3,7 @@ const assert = require("node:assert/strict")
 
 const { registerSubscriptions } = require("../mqtt/subscriptions")
 
-test("registerSubscriptions listens for device direct reports", () => {
+test("registerSubscriptions listens on shared device topics", () => {
   const topics = []
   const mqttClient = {
     subscribe: (topic, callback) => {
@@ -14,5 +14,12 @@ test("registerSubscriptions listens for device direct reports", () => {
 
   registerSubscriptions(mqttClient, null)
 
-  assert.ok(topics.includes("device/+/direct"))
+  assert.deepEqual(topics, [
+    "device/heartbeat",
+    "device/sensor",
+    "device/behavior",
+    "device/error",
+    "device/timeRequest",
+    "device/direct",
+  ])
 })

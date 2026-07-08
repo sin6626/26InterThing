@@ -14,9 +14,9 @@
 
 ## 核心约定
 
-1. 设备端按 `device/{d_no}/...` 上报数据。
-2. 应用层按 `device/{topic}/direct` 下发控制指令。
-3. 设备端本地手动修改指令后，可按 `device/{d_no}/direct` 上报给应用层。
+1. 设备端按 `device/{类型}` 上报数据，设备编号统一放在 payload 的 `d_no` 字段。
+2. 应用层按 `device/direct` 下发控制指令，目标设备编号统一放在 payload 的 `d_no` 字段。
+3. 设备端本地手动修改指令后，也按 `device/direct` 上报给应用层。
 4. 指令操作历史的方向只有两类：`应用层下发`、`设备端上报`。
 5. 传感器 payload 字段名以数据库字段映射表为准，推荐按温度、压力、流量配置。
 6. 时间格式统一用 `YYYY-MM-DD HH:mm:ss`。
@@ -25,44 +25,44 @@
 
 | 主题 | 方向 | 说明 |
 |---|---|---|
-| `device/+/heartbeat` | 设备端 -> 应用层 | 心跳与设备状态 |
-| `device/+/sensor` | 设备端 -> 应用层 | 温度、压力、流量等传感器数据 |
-| `device/+/behavior` | 设备端 -> 应用层 | 行为/研判结果数据 |
-| `device/+/error` | 设备端 -> 应用层 | 错误与告警数据 |
-| `device/+/timeRequest` | 设备端 -> 应用层 | 设备请求校时 |
-| `device/+/direct` | 设备端 -> 应用层 | 设备端本地指令变更上报 |
-| `device/+/pid` | 设备端 -> 应用层 | 可选 PID/识别清单，按行为数据处理 |
+| `device/heartbeat` | 设备端 -> 应用层 | 心跳与设备状态 |
+| `device/sensor` | 设备端 -> 应用层 | 温度、压力、流量等传感器数据 |
+| `device/behavior` | 设备端 -> 应用层 | 行为/研判结果数据 |
+| `device/error` | 设备端 -> 应用层 | 错误与告警数据 |
+| `device/timeRequest` | 设备端 -> 应用层 | 设备请求校时 |
+| `device/direct` | 双向 | 应用层下发指令、设备端本地指令变更上报 |
 
 ## 1. 心跳消息
 
-主题：`device/202111/heartbeat`
+主题：`device/heartbeat`
 
 ```json
-{"status":"online","VStatus":0,"c_time":"2026-07-08 09:00:00"}
+{"d_no":"202111","status":"online","VStatus":0,"c_time":"2026-07-08 09:00:00"}
 ```
 
 说明：
 
 - 建议每 3 秒发送一次。
 - 后端 6 秒未收到心跳会把设备标记为离线。
-- 第一次上线或离线恢复上线时，应用层会定向补发时间到 `device/{d_no}/updateTime`。
+- 第一次上线或离线恢复上线时，应用层会定向补发时间到 `device/updateTime`，payload 内带 `d_no`。
 
 快速测试：
 
 ```json
-{"status":"online","VStatus":0,"c_time":"2026-07-08 09:00:00"}
-{"status":"online","VStatus":1,"c_time":"2026-07-08 09:00:03"}
-{"status":"online","VStatus":0,"c_time":"2026-07-08 09:00:06"}
+{"d_no":"202111","status":"online","VStatus":0,"c_time":"2026-07-08 09:00:00"}
+{"d_no":"202112","status":"online","VStatus":1,"c_time":"2026-07-08 09:00:03"}
+{"d_no":"202113","status":"online","VStatus":0,"c_time":"2026-07-08 09:00:06"}
 ```
 
 ## 2. 传感器数据
 
-主题：`device/202111/sensor`
+主题：`device/sensor`
 
 推荐字段按水循环系统配置为温度、压力、流量。实际入库字段由 `t_sensor_field_mapper.p_name -> db_name` 决定。
 
 ```json
 {
+  "d_no": "202111",
   "temp1": 26.5,
   "temp2": 27.1,
   "pressure": 12.4,
@@ -86,19 +86,20 @@
 快速测试：
 
 ```json
-{"temp1":26.5,"temp2":27.1,"pressure":12.4,"flow":18.6,"VStatus":0,"c_time":"2026-07-08 09:00:00","online":"实时数据"}
-{"temp1":31.2,"temp2":30.8,"pressure":21.5,"flow":9.2,"VStatus":1,"c_time":"2026-07-08 09:00:03","online":"实时数据"}
-{"temp1":25.9,"temp2":26.3,"pressure":11.8,"flow":19.4,"VStatus":0,"c_time":"2026-07-08 09:00:06","online":"保存数据"}
+{"d_no":"202111","temp1":26.5,"temp2":27.1,"pressure":12.4,"flow":18.6,"VStatus":0,"c_time":"2026-07-08 09:00:00","online":"实时数据"}
+{"d_no":"202112","temp1":31.2,"temp2":30.8,"pressure":21.5,"flow":9.2,"VStatus":1,"c_time":"2026-07-08 09:00:03","online":"实时数据"}
+{"d_no":"202113","temp1":25.9,"temp2":26.3,"pressure":11.8,"flow":19.4,"VStatus":0,"c_time":"2026-07-08 09:00:06","online":"保存数据"}
 ```
 
 ## 3. 行为/研判数据
 
-主题：`device/202111/behavior`
+主题：`device/behavior`
 
 行为数据用于承接设备侧运行行为、智能判定结果或管路状态描述。字段名同样以 `t_behavior_field_mapper` 为准。
 
 ```json
 {
+  "d_no": "202111",
   "pump_status": "on",
   "judge_result": "normal",
   "action": "keep",
@@ -110,18 +111,19 @@
 快速测试：
 
 ```json
-{"pump_status":"on","judge_result":"normal","action":"keep","c_time":"2026-07-08 09:00:00","online":"实时数据"}
-{"pump_status":"off","judge_result":"pressure_high","action":"stop_pump","c_time":"2026-07-08 09:00:03","online":"实时数据"}
+{"d_no":"202111","pump_status":"on","judge_result":"normal","action":"keep","c_time":"2026-07-08 09:00:00","online":"实时数据"}
+{"d_no":"202112","pump_status":"off","judge_result":"pressure_high","action":"stop_pump","c_time":"2026-07-08 09:00:03","online":"实时数据"}
 ```
 
 ## 4. 错误数据
 
-主题：`device/202111/error`
+主题：`device/error`
 
 推荐只发错误编号和类型，中文文案可由应用层映射。
 
 ```json
 {
+  "d_no": "202111",
   "e_no": "E101",
   "type": "3",
   "c_time": "2026-07-08 09:00:03"
@@ -132,6 +134,7 @@
 
 ```json
 {
+  "d_no": "202111",
   "e_no": "E101",
   "type": "3",
   "e_msg": "压力传感器异常",
@@ -153,22 +156,23 @@
 快速测试：
 
 ```json
-{"e_no":"E101","type":"3","e_msg":"压力传感器异常","c_time":"2026-07-08 09:00:03"}
-{"e_no":"E201","type":"6","e_msg":"管路压力过高","c_time":"2026-07-08 09:00:06"}
+{"d_no":"202111","e_no":"E101","type":"3","e_msg":"压力传感器异常","c_time":"2026-07-08 09:00:03"}
+{"d_no":"202112","e_no":"E201","type":"6","e_msg":"管路压力过高","c_time":"2026-07-08 09:00:06"}
 ```
 
 ## 5. 设备端请求时间同步
 
-请求主题：`device/202111/timeRequest`
+请求主题：`device/timeRequest`
 
 ```json
-{"reason":"power_on"}
+{"d_no":"202111","reason":"power_on"}
 ```
 
-应用层回复主题：`device/202111/updateTime`
+应用层回复主题：`device/updateTime`
 
 ```json
 {
+  "d_no": "202111",
   "nowTime": "09:00:00",
   "nowdate": "26.07.08"
 }
@@ -181,7 +185,7 @@
 
 ## 6. 应用层下发控制指令
 
-应用层实际发布主题：`device/{topic}/direct`
+应用层实际发布主题：`device/direct`
 
 常见水循环指令：
 
@@ -205,17 +209,17 @@
 示例：
 
 ```json
-{"value":"on"}
-{"value":"off"}
-{"value":"20"}
-{"temp_low":"24"}
+{"d_no":"202111","config_id":7,"topic":"pump","value":"on"}
+{"d_no":"202111","config_id":7,"topic":"pump","value":"off"}
+{"d_no":"202111","config_id":10,"topic":"temperatureUpper","value":"20"}
+{"d_no":"202111","config_id":9,"topic":"temperatureLower","temp_low":"24"}
 ```
 
 ## 7. 设备端上报本地指令变更
 
 设备端如果通过本地按钮、串口工具或嵌入式逻辑手动修改了水泵/阈值/模式，应上报给应用层。
 
-主题：`device/202111/direct`
+主题：`device/direct`
 
 最小格式：
 
@@ -268,19 +272,19 @@
 ### 正常心跳
 
 ```json
-{"status":"online","VStatus":0,"c_time":"2026-07-08 09:00:00"}
+{"d_no":"202111","status":"online","VStatus":0,"c_time":"2026-07-08 09:00:00"}
 ```
 
 ### 传感器实时数据
 
 ```json
-{"temp1":26.5,"temp2":27.1,"pressure":12.4,"flow":18.6,"VStatus":0,"c_time":"2026-07-08 09:00:00","online":"实时数据"}
+{"d_no":"202111","temp1":26.5,"temp2":27.1,"pressure":12.4,"flow":18.6,"VStatus":0,"c_time":"2026-07-08 09:00:00","online":"实时数据"}
 ```
 
 ### 压力异常错误
 
 ```json
-{"e_no":"E201","type":"6","e_msg":"管路压力过高","c_time":"2026-07-08 09:00:06"}
+{"d_no":"202111","e_no":"E201","type":"6","e_msg":"管路压力过高","c_time":"2026-07-08 09:00:06"}
 ```
 
 ### 设备端上报关泵
@@ -292,7 +296,7 @@
 ### 请求校时
 
 ```json
-{"reason":"power_on"}
+{"d_no":"202111","reason":"power_on"}
 ```
 
 *文档更新时间：2026-07-08*

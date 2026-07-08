@@ -255,7 +255,7 @@ POST /updateDirect/:d_no
 
 - 后端会把开关类值标准化为 `on/off`。
 - 数据库更新成功后，会写入 `t_direct_history`，方向为 `应用层下发`。
-- 在线设备立即通过 MQTT 下发，离线设备缓存后上线补发。
+- 在线设备立即通过 MQTT `device/direct` 下发，离线设备缓存后上线补发；payload 会包含 `d_no`、`config_id`、`topic` 和最终指令值。
 
 ### 更新全局指令
 
@@ -269,7 +269,7 @@ POST /updateDirectGlobal
 
 - 写入 `t_direct_global`。
 - 写入操作历史，方向为 `应用层下发`。
-- 会对所有设备执行在线直发或离线缓存。
+- 会对所有设备逐个生成带 `d_no` 的 payload，并执行在线直发或离线缓存。
 
 ### 获取指令类型选项
 
@@ -374,12 +374,12 @@ POST /updateTime
 
 | type | 触发条件 | 说明 |
 |---|---|---|
-| `sensor_realtime` | 收到 `device/{d_no}/sensor` | 传感器实时数据 |
-| `behavior_realtime` | 收到 `device/{d_no}/behavior` 或 `pid` | 行为实时数据 |
-| `error_realtime` | 收到 `device/{d_no}/error` | 错误实时数据 |
+| `sensor_realtime` | 收到 `device/sensor` | 传感器实时数据 |
+| `behavior_realtime` | 收到 `device/behavior` | 行为实时数据 |
+| `error_realtime` | 收到 `device/error` | 错误实时数据 |
 | `alarm_realtime` | 错误或异常状态触发 | 前端告警通知 |
 | `device_status` | 心跳或状态变化 | 设备在线/异常状态 |
-| `direct_response` | 收到 `device/{d_no}/direct` | 设备端指令上报或执行状态 |
+| `direct_response` | 收到 `device/direct` | 设备端指令上报或执行状态 |
 
 ## MQTT 协议
 
@@ -387,12 +387,12 @@ POST /updateTime
 
 | 主题 | 说明 |
 |---|---|
-| `device/{d_no}/heartbeat` | 心跳 |
-| `device/{d_no}/sensor` | 温度、压力、流量数据 |
-| `device/{d_no}/behavior` | 行为/判定数据 |
-| `device/{d_no}/error` | 错误数据 |
-| `device/{d_no}/timeRequest` | 请求时间同步 |
-| `device/{d_no}/direct` | 设备端本地指令变更上报 |
+| `device/heartbeat` | 心跳，payload 必须带 `d_no` |
+| `device/sensor` | 温度、压力、流量数据，payload 必须带 `d_no` |
+| `device/behavior` | 行为/判定数据，payload 必须带 `d_no` |
+| `device/error` | 错误数据，payload 必须带 `d_no` |
+| `device/timeRequest` | 请求时间同步，payload 必须带 `d_no` |
+| `device/direct` | 设备端本地指令变更上报，payload 必须带 `d_no` |
 
 设备端指令上报示例：
 
@@ -418,9 +418,8 @@ POST /updateTime
 
 | 主题 | 说明 |
 |---|---|
-| `device/{topic}/direct` | 应用层下发业务控制指令 |
-| `device/{d_no}/updateTime` | 定向时间同步 |
-| `device/updateTime` | 全局时间同步 |
+| `device/direct` | 应用层下发业务控制指令，payload 带 `d_no` |
+| `device/updateTime` | 定向或全局时间同步；定向时 payload 带 `d_no` |
 
 当前常见指令 topic：
 

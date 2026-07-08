@@ -47,3 +47,20 @@ test("buildDeviceCommandPayload keeps switch and mode semantics unchanged", () =
     { "air mode": "cold" },
   )
 })
+
+test("buildDeviceCommandPayload keeps device metadata in payload", () => {
+  assert.deepEqual(
+    buildDeviceCommandPayload({
+      d_no: "202111",
+      config_id: 7,
+      topic: "pump",
+      value: "off",
+    }),
+    {
+      d_no: "202111",
+      config_id: 7,
+      topic: "pump",
+      value: "off",
+    },
+  )
+})

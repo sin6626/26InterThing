@@ -3,13 +3,12 @@ const assert = require("node:assert/strict")
 
 const { createTopicDispatcher } = require("../mqtt/topicDispatcher")
 
-test("createTopicDispatcher routes timeRequest messages to the time sync handler", async () => {
+test("createTopicDispatcher routes timeRequest messages using payload d_no", async () => {
   const calls = []
   const dispatch = createTopicDispatcher({
     broadcastToClients: () => {},
     directHandler: { updateDirect: () => {} },
     heartbeatHandler: { handleHeartbeat: () => {} },
-    pidHandler: null,
     saveHandler: {
       saveSensorData: () => {},
       savebehaviorData: () => {},
@@ -22,17 +21,17 @@ test("createTopicDispatcher routes timeRequest messages to the time sync handler
     },
   })
 
-  await dispatch("device/202111/timeRequest", Buffer.from('{"reason":"power_on"}'))
+  await dispatch("device/timeRequest", Buffer.from('{"d_no":"202111","reason":"power_on"}'))
 
   assert.deepEqual(calls, [
     {
       deviceId: "202111",
-      data: { reason: "power_on" },
+      data: { d_no: "202111", reason: "power_on" },
     },
   ])
 })
 
-test("createTopicDispatcher publishes pid messages as behavior realtime payloads", async () => {
+test("createTopicDispatcher keeps sensor d_no from payload on shared topic", async () => {
   const broadcasts = []
   const dispatch = createTopicDispatcher({
     broadcastToClients: (type, data) => {
@@ -40,36 +39,24 @@ test("createTopicDispatcher publishes pid messages as behavior realtime payloads
     },
     directHandler: { updateDirect: () => {} },
     heartbeatHandler: { handleHeartbeat: () => {} },
-    pidHandler: {
-      savePidData: (topic, payload, callback) => {
-        callback(null, {
-          d_no: "202111",
-          pidList: ["BOX1001", "BOX1002"],
-          pidText: "BOX1001,BOX1002",
-          c_time: "2026-06-04 12:00:00",
-          online: "实时数据",
-        })
-      },
-    },
     saveHandler: {
-      saveSensorData: () => {},
+      saveSensorData: (topic, payload, callback) => {
+        callback(null)
+      },
       savebehaviorData: () => {},
       saveErrorData: () => {},
     },
     timeSyncHandler: null,
   })
 
-  await dispatch("device/202111/pid", Buffer.from('{"PID":["BOX1001","BOX1002"]}'))
+  await dispatch("device/sensor", Buffer.from('{"d_no":"202111","temp1":26.5}'))
 
   assert.deepEqual(broadcasts, [
     {
-      type: "behavior_realtime",
+      type: "sensor_realtime",
       data: {
         d_no: "202111",
-        pid: "BOX1001,BOX1002",
-        PID: ["BOX1001", "BOX1002"],
-        c_time: "2026-06-04 12:00:00",
-        online: "实时数据",
+        temp1: 26.5,
       },
     },
   ])

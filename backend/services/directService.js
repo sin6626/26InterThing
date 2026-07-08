@@ -38,26 +38,21 @@ const dispatchGlobalCommand = async (configId, topic, value) => {
     const status = heartbeat.getDeviceStatus(dNo)
     // 先把页面/数据库里的值翻译成设备端真正认识的 payload。
     const commandPayload = buildDeviceCommandPayload({
+      d_no: dNo,
       config_id: configId,
       topic,
       value,
     })
 
-    const offlinePayload = {
-      topic,
-      commandPayload,
-    }
-
     // 在线设备立即发，离线设备先缓存，等恢复在线后补发。
     if (status && status.status === "online") {
-      const mqttTopic = `device/${topic}/direct`
-      mqttClient.publishToDevice(mqttTopic, commandPayload).catch((error) => {
+      mqttClient.publishToDevice("device/direct", commandPayload).catch((error) => {
         console.error(`发送全局指令到设备 ${dNo} 失败:`, error)
       })
       return
     }
 
-    heartbeat.storeOfflineMessage(dNo, offlinePayload)
+    heartbeat.storeOfflineMessage(dNo, { commandPayload })
   })
 
   console.log(`全局指令已发送给 ${deviceNumbers.length} 个设备`)
@@ -110,15 +105,13 @@ const dispatchDeviceCommand = async (dNo, configId, newValue) => {
   const status = heartbeat.getDeviceStatus(dNo)
 
   if (status && status.status === "online") {
-    const mqttTopic = `device/${payload.topic}/direct`
-    mqttClient.publishToDevice(mqttTopic, commandPayload).catch((error) => {
+    mqttClient.publishToDevice("device/direct", commandPayload).catch((error) => {
       console.error("发送指令失败:", error)
     })
     return
   }
 
   heartbeat.storeOfflineMessage(dNo, {
-    topic: payload.topic,
     commandPayload,
   })
 }

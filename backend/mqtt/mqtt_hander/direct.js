@@ -6,6 +6,10 @@ const { normalizeReportedDirectValue } = require("./directPayload")
 
 exports.updateDirect = (topic, payload) => {
   const data = JSON.parse(payload.toString())
+  if (!data.d_no || !data.config_id) {
+    console.error("设备端上报指令缺少d_no或config_id")
+    return
+  }
   const newValue = normalizeReportedDirectValue(data.value)
 
   Promise.all([
