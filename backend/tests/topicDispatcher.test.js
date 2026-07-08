@@ -49,14 +49,14 @@ test("createTopicDispatcher keeps sensor d_no from payload on shared topic", asy
     timeSyncHandler: null,
   })
 
-  await dispatch("device/sensor", Buffer.from('{"d_no":"202111","temp1":26.5}'))
+  await dispatch("device/sensor", Buffer.from('{"d_no":"202111","temp":26.5}'))
 
   assert.deepEqual(broadcasts, [
     {
       type: "sensor_realtime",
       data: {
         d_no: "202111",
-        temp1: 26.5,
+        temp: 26.5,
       },
     },
   ])

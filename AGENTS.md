@@ -22,6 +22,7 @@
 - 已具备：Web 端、传感器实时/历史数据、行为数据、错误数据、设备管理、指令配置/下发、设备端指令上报、指令操作历史查询、MQTT、WebSocket、MySQL 存储。
 - 指令操作历史已使用 `t_direct_history`，页面“方向”只有 `应用层下发` 和 `设备端上报` 两类。
 - MQTT 入站主题已改为 `device/heartbeat`、`device/sensor`、`device/behavior`、`device/error`、`device/timeRequest`、`device/direct`；设备编号统一放在 payload 的 `d_no` 字段。
+- MQTT 指令下发统一使用 `device/direct`，payload 为 `{ d_no, config_id, topic, value }`。
 - 旧 PID 特殊补丁逻辑已移除。
 - 明显缺口：智能判定 HTTP 服务对接；当前 `/api/sensor/recognize` 仍是占位实现。
 - 现场限制：比赛局域网禁止外网；如果题目不涉及移动应用开发，不允许使用手机。

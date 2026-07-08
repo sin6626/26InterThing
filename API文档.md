@@ -421,18 +421,29 @@ POST /updateTime
 | `device/direct` | 应用层下发业务控制指令，payload 带 `d_no` |
 | `device/updateTime` | 定向或全局时间同步；定向时 payload 带 `d_no` |
 
+`device/direct` 下发 payload 统一格式：
+
+```json
+{
+  "d_no": "202111",
+  "config_id": 7,
+  "topic": "pump",
+  "value": "off"
+}
+```
+
 当前常见指令 topic：
 
-| 指令 | topic | 值 |
-|---|---|---|
-| 控制模式 | `master` | `on/off` |
-| 水泵开关 | `pump` | `on/off` |
-| 温度下限 | `temperatureLower` | 数值 |
-| 温度上限 | `temperatureUpper` | 数值 |
-| 流量下限 | `flowLow` | 数值 |
-| 流量上限 | `flowUpper` | 数值 |
-| 压力下限 | `pressuerLow` | 数值 |
-| 压力上限 | `pressureUpper` | 数值 |
+| config_id | 指令 | topic | value |
+|---|---|---|---|
+| `0` | 控制模式 | `master` | `on/off` |
+| `7` | 水泵开关 | `pump` | `on/off` |
+| `9` | 温度下限 | `temperatureLower` | 数值 |
+| `10` | 温度上限 | `temperatureUpper` | 数值 |
+| `11` | 流量下限 | `flowLow` | 数值 |
+| `12` | 流量上限 | `flowUpper` | 数值 |
+| `13` | 压力下限 | `pressuerLow` | 数值 |
+| `15` | 压力上限 | `pressureUpper` | 数值 |
 
 ## 数据表说明
 
