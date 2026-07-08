@@ -6,6 +6,7 @@ const registerSubscriptions = (mqttClient, pidHandler) => {
     ["device/+/behavior", "成功订阅行为数据主题"],
     ["device/+/error", "成功订阅错误数据主题"],
     ["device/+/timeRequest", "成功订阅时间请求主题"],
+    ["device/+/direct", "成功订阅设备端指令上报主题"],
   ]
 
   subscriptions.forEach(([topic, logText]) => {
