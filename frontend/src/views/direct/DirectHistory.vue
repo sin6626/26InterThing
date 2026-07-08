@@ -103,7 +103,7 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column prop="old_value" label="原值" min-width="110" />
       <el-table-column prop="new_value" label="新值" min-width="110" />
-      <el-table-column prop="remark" label="来源" min-width="140" />
+      <el-table-column prop="remark" label="方向" min-width="140" />
     </el-table>
 
     <el-pagination
