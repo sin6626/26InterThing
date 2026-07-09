@@ -12,6 +12,7 @@ const buildRealtimeMetadata = (metadataRows) => {
     f_name: field.f_name,
     unit: field.unit || "",
     db_name: field.db_name,
+    p_name: field.p_name,
     visible: field.visible === "1",
   }))
 }

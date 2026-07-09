@@ -20,6 +20,19 @@ function findIndex(xAxisData, minuteKey) {
   return -1
 }
 
+export function resolveRealtimeValues(payload, metadata) {
+  const displayValues = {}
+  const databaseValues = {}
+
+  for (const field of metadata) {
+    const value = payload?.[field.p_name] ?? payload?.[field.db_name] ?? payload?.[field.f_name]
+    databaseValues[field.db_name] = value ?? null
+    if (value !== null && value !== undefined) displayValues[field.f_name] = value
+  }
+
+  return { displayValues, databaseValues }
+}
+
 export function applyMinuteRealtimeUpdate(state, { minuteKey, valuesBySeriesName, limit = 60 }) {
   const { xAxisData, seriesData, minuteStats } = state
 

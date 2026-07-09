@@ -1,6 +1,9 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { applyMinuteRealtimeUpdate } from '../src/composables/useMinuteSeries.js'
+import {
+  applyMinuteRealtimeUpdate,
+  resolveRealtimeValues,
+} from '../src/composables/useMinuteSeries.js'
 
 function freshState() {
   return { xAxisData: [], seriesData: [], minuteStats: {} }
@@ -71,5 +74,35 @@ describe('applyMinuteRealtimeUpdate', () => {
     assert.equal(state.seriesData.length, 2)
     assert.equal(state.seriesData.find((s) => s.name === 'temp').data[0], 20)
     assert.equal(state.seriesData.find((s) => s.name === 'humidity').data[0], 50)
+  })
+})
+
+describe('resolveRealtimeValues', () => {
+  it('maps MQTT payload names to display and database field names', () => {
+    const metadata = [
+      { f_name: '温度', db_name: 'field1', p_name: 'temp' },
+      { f_name: '流量', db_name: 'field2', p_name: 'flow' },
+      { f_name: '压力', db_name: 'field3', p_name: 'pressurre' },
+    ]
+
+    const values = resolveRealtimeValues(
+      { temp: 32.5, flow: 18.6, pressurre: 12.4 },
+      metadata,
+    )
+
+    assert.deepEqual(values.displayValues, { 温度: 32.5, 流量: 18.6, 压力: 12.4 })
+    assert.deepEqual(values.databaseValues, { field1: 32.5, field2: 18.6, field3: 12.4 })
+  })
+
+  it('preserves zero and reports missing chart values as null', () => {
+    const metadata = [
+      { f_name: '温度', db_name: 'field1', p_name: 'temp' },
+      { f_name: '流量', db_name: 'field2', p_name: 'flow' },
+    ]
+
+    const values = resolveRealtimeValues({ temp: 0 }, metadata)
+
+    assert.deepEqual(values.displayValues, { 温度: 0 })
+    assert.deepEqual(values.databaseValues, { field1: 0, field2: null })
   })
 })

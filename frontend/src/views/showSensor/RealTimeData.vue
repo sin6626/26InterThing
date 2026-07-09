@@ -4,7 +4,10 @@ import * as echarts from 'echarts'
 import { getEchartsSensorByQuery, getSensorDataRealTime } from '@/api/sensor'
 import { useDeviceNumbers } from '@/composables/useDeviceNumbers'
 import { useSwitchStore } from '@/stores/switch'
-import { applyMinuteRealtimeUpdate } from '@/composables/useMinuteSeries'
+import {
+  applyMinuteRealtimeUpdate,
+  resolveRealtimeValues,
+} from '@/composables/useMinuteSeries'
 import { createMinuteTimeAxis } from '@/utils/chartTimeAxis'
 import { onRealtimeMessage, onWsLifecycle } from '@/utils/wsRealtime'
 
@@ -76,27 +79,12 @@ const fetchRealtime = async () => {
 const updateSensorData = (rawData) => {
   if (!rawData) return
 
-  const currentValues = { ...sensorData.value.values }
-
-  // 更新字段值（兼容 p_name 和中文字段名）
-  const fieldMapping = {
-    '厢外实时温度': ['厢外实时温度', 'Tout'],
-    '厢内实时光照': ['厢内实时光照', 'LXin'],
-    '厢内实时温度': ['厢内实时温度', 'Tin'],
-  }
-
-  for (const [displayName, keys] of Object.entries(fieldMapping)) {
-    for (const key of keys) {
-      if (rawData[key] !== undefined) {
-        currentValues[displayName] = rawData[key]
-        break
-      }
-    }
-  }
+  const { displayValues } = resolveRealtimeValues(rawData, sensorData.value.metadata)
+  const currentValues = { ...sensorData.value.values, ...displayValues }
 
   // 更新在线状态和时间
-  if (rawData.online) currentValues['是否在线'] = rawData.online
-  if (rawData.c_time) currentValues['更新时间'] = rawData.c_time
+  if (rawData.online !== undefined) currentValues['是否在线'] = rawData.online
+  if (rawData.c_time !== undefined) currentValues['更新时间'] = rawData.c_time
 
   sensorData.value = {
     ...sensorData.value,
@@ -130,22 +118,14 @@ const getSeries = () => {
 
 // 新到一条实时数据后，把它推进当前分钟窗口。
 const shiftSeriesWindow = (rawData) => {
-  const normalized = {
-    厢外实时温度: Number(rawData?.厢外实时温度 ?? rawData?.Tout ?? rawData?.field2 ?? 0),
-    厢内实时光照: Number(rawData?.厢内实时光照 ?? rawData?.LXin ?? rawData?.field3 ?? 0),
-    厢内实时温度: Number(rawData?.厢内实时温度 ?? rawData?.Tin ?? rawData?.field4 ?? 0),
-  }
-
   const minuteKey = resolveMinuteLabelFromPayload(rawData)
-
+  const { databaseValues } = resolveRealtimeValues(rawData, sensorData.value.metadata)
   const valuesBySeriesName = {}
   for (const series of echartsData.value.seriesData) {
-    const key = series.name
-    let value = 0
-    if (key.includes('厢外实时温度')) value = normalized.厢外实时温度
-    else if (key.includes('厢内实时光照')) value = normalized.厢内实时光照
-    else if (key.includes('厢内实时温度')) value = normalized.厢内实时温度
-    valuesBySeriesName[key] = Number.isFinite(value) ? Number(value.toFixed(2)) : 0
+    const value = Number(databaseValues[series.db_name])
+    if (databaseValues[series.db_name] !== null && Number.isFinite(value)) {
+      valuesBySeriesName[series.name] = Number(value.toFixed(2))
+    }
   }
 
   applyMinuteRealtimeUpdate(echartsData.value, { minuteKey, valuesBySeriesName, limit: 10 })

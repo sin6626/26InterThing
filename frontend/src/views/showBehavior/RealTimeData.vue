@@ -4,7 +4,10 @@ import * as echarts from 'echarts'
 import { getEchartsSensorByQuery, getSensorDataRealTime } from '@/api/sensor'
 import { useDeviceNumbers } from '@/composables/useDeviceNumbers'
 import { useSwitchStore } from '@/stores/switch'
-import { applyMinuteRealtimeUpdate } from '@/composables/useMinuteSeries'
+import {
+  applyMinuteRealtimeUpdate,
+  resolveRealtimeValues,
+} from '@/composables/useMinuteSeries'
 import { createMinuteTimeAxis } from '@/utils/chartTimeAxis'
 import { onRealtimeMessage, onWsLifecycle } from '@/utils/wsRealtime'
 
@@ -71,29 +74,12 @@ const fetchRealtime = async () => {
 const updateSensorData = (rawData) => {
   if (!rawData) return
 
-  const currentValues = { ...sensorData.value.values }
-
-  // 更新字段值（兼容 p_name 和中文字段名）
-  const fieldMapping = {
-    '水温1': ['水温1', 't1'],
-    '水温2': ['水温2', 't2'],
-    '水质1': ['水质1', 'tds1'],
-    '水质2': ['水质2', 'tds2'],
-    PID: ['pid', 'PID'],
-  }
-
-  for (const [displayName, keys] of Object.entries(fieldMapping)) {
-    for (const key of keys) {
-      if (rawData[key] !== undefined) {
-        currentValues[displayName] = rawData[key]
-        break
-      }
-    }
-  }
+  const { displayValues } = resolveRealtimeValues(rawData, sensorData.value.metadata)
+  const currentValues = { ...sensorData.value.values, ...displayValues }
 
   // 更新在线状态和时间
-  if (rawData.online) currentValues['是否在线'] = rawData.online
-  if (rawData.c_time) currentValues['更新时间'] = rawData.c_time
+  if (rawData.online !== undefined) currentValues['是否在线'] = rawData.online
+  if (rawData.c_time !== undefined) currentValues['更新时间'] = rawData.c_time
 
   sensorData.value = {
     ...sensorData.value,
@@ -125,27 +111,14 @@ const getSeries = () => {
 
 // 新到一条实时数据后，把它推进分钟窗口并立即重绘。
 const shiftSeriesWindow = (rawData) => {
-  // 使用 p_name 字段名，兼容旧的中文字段名
-  const normalized = {
-    水温: Number(rawData?.水温 ?? rawData?.t1 ?? rawData?.field1 ?? 0),
-    水温2: Number(rawData?.水温2 ?? rawData?.t2 ?? rawData?.field2 ?? 0),
-    水质1: Number(rawData?.水质1 ?? rawData?.tds1 ?? rawData?.field3 ?? 0),
-    水质2: Number(rawData?.水质2 ?? rawData?.tds2 ?? rawData?.field4 ?? 0),
-    湿度: Number(rawData?.湿度 ?? rawData?.tds ?? rawData?.field5 ?? 0),
-  }
-
   const minuteKey = resolveMinuteLabelFromPayload(rawData)
-
+  const { databaseValues } = resolveRealtimeValues(rawData, sensorData.value.metadata)
   const valuesBySeriesName = {}
   for (const series of echartsData.value.seriesData) {
-    const key = series.name
-    let value = 0
-    if (key.includes('水温2')) value = normalized.水温2
-    else if (key.includes('水温')) value = normalized.水温
-    else if (key.includes('水质1')) value = normalized.水质1
-    else if (key.includes('水质2')) value = normalized.水质2
-    else if (key.includes('湿度')) value = normalized.湿度
-    valuesBySeriesName[key] = Number.isFinite(value) ? Number(value.toFixed(2)) : 0
+    const value = Number(databaseValues[series.db_name])
+    if (databaseValues[series.db_name] !== null && Number.isFinite(value)) {
+      valuesBySeriesName[series.name] = Number(value.toFixed(2))
+    }
   }
 
   applyMinuteRealtimeUpdate(echartsData.value, { minuteKey, valuesBySeriesName, limit: 10 })
