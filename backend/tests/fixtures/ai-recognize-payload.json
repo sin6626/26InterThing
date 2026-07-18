@@ -1,0 +1,6 @@
+{
+  "data": "$rows",
+  "first": "$firstRow",
+  "temperature": "$firstRow.温度",
+  "count": "$selectedCount"
+}

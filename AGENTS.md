@@ -24,5 +24,5 @@
 - MQTT 入站主题已改为 `device/heartbeat`、`device/sensor`、`device/behavior`、`device/error`、`device/timeRequest`、`device/direct`；设备编号统一放在 payload 的 `d_no` 字段。
 - MQTT 指令下发统一使用 `device/direct`，payload 为 `{ d_no, config_id, topic, value }`。
 - 旧 PID 特殊补丁逻辑已移除。
-- 智能判定已预留 HTTP 转发：后端启动时读取 `backend/.env`，配置 `AI_RECOGNIZE_URL` 后，`/api/sensor/recognize` 会把前端勾选的历史传感器数据转发给题目提供的 Python/YOLO 服务；未配置时返回待接入提示。
+- 智能判定已预留 HTTP 转发：后端启动时读取 `backend/.env`，配置 `AI_RECOGNIZE_URL` 后，`/api/sensor/recognize` 会把前端勾选的历史传感器数据转发给题目提供的 Python/YOLO 服务；请求体优先由 `backend/config/ai-recognize-payload.json` 模板决定；未配置 URL 时返回待接入提示。
 - 现场限制：比赛局域网禁止外网；如果题目不涉及移动应用开发，不允许使用手机。

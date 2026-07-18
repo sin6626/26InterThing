@@ -1,7 +1,9 @@
 const test = require("node:test")
 const assert = require("node:assert/strict")
+const path = require("node:path")
 
 const {
+  buildAiPayload,
   recognizeSensorRows,
   summarizeRecognitionSelection,
 } = require("../services/recognitionService")
@@ -57,6 +59,7 @@ test("recognizeSensorRows can rename the AI payload key", async () => {
     {
       aiUrl: "http://127.0.0.1:8000/predict",
       payloadKey: "data",
+      payloadTemplatePath: null,
       fetchImpl: async (url, options) => {
         calls.push({ url, options })
         return {
@@ -68,4 +71,18 @@ test("recognizeSensorRows can rename the AI payload key", async () => {
   )
 
   assert.equal(calls[0].options.body, JSON.stringify({ data: [{ id: 1 }] }))
+})
+
+test("buildAiPayload reads JSON templates and replaces row placeholders", () => {
+  const payload = buildAiPayload({
+    rows: [{ id: 1, 温度: 32.5 }],
+    payloadTemplatePath: path.join(__dirname, "fixtures", "ai-recognize-payload.json"),
+  })
+
+  assert.deepEqual(payload, {
+    data: [{ id: 1, 温度: 32.5 }],
+    first: { id: 1, 温度: 32.5 },
+    temperature: 32.5,
+    count: 1,
+  })
 })
