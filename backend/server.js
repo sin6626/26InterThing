@@ -2,6 +2,8 @@
 // 1. 启动 HTTP 接口服务
 // 2. 初始化 MQTT 客户端，让应用层可以和设备侧通信
 // 3. 初始化 WebSocket，把实时数据主动推给前端页面
+require("./config/loadEnv")()
+
 const express = require("express")
 const cors = require("cors")
 const dbPool = require("./db") // 引入数据库连接池

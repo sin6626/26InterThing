@@ -1,5 +1,5 @@
 const dataService = require("../services/dataService")
-const { summarizeRecognitionSelection } = require("../services/recognitionService")
+const { recognizeSensorRows } = require("../services/recognitionService")
 
 // 查询“某一类数据的最新一条”，给实时页右侧的信息卡片使用。
 exports.realtime = async (req, res) => {
@@ -57,7 +57,7 @@ exports.error = async (req, res) => {
 
 exports.recognize = async (req, res) => {
   try {
-    const result = summarizeRecognitionSelection(req.body?.rows)
+    const result = await recognizeSensorRows(req.body?.rows)
     res.send({
       status: 0,
       message: result.message,
