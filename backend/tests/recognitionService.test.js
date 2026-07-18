@@ -49,3 +49,23 @@ test("recognizeSensorRows forwards rows to configured AI service", async () => {
     result: { message: "识别成功", type: "normal" },
   })
 })
+
+test("recognizeSensorRows can rename the AI payload key", async () => {
+  const calls = []
+  await recognizeSensorRows(
+    [{ id: 1 }],
+    {
+      aiUrl: "http://127.0.0.1:8000/predict",
+      payloadKey: "data",
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options })
+        return {
+          ok: true,
+          json: async () => ({ message: "识别成功" }),
+        }
+      },
+    },
+  )
+
+  assert.equal(calls[0].options.body, JSON.stringify({ data: [{ id: 1 }] }))
+})

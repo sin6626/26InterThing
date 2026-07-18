@@ -14,6 +14,7 @@ const recognizeSensorRows = async (
   rows,
   {
     aiUrl = process.env.AI_RECOGNIZE_URL,
+    payloadKey = process.env.AI_RECOGNIZE_PAYLOAD_KEY || "rows",
     fetchImpl = globalThis.fetch,
   } = {},
 ) => {
@@ -30,7 +31,7 @@ const recognizeSensorRows = async (
   const response = await fetchImpl(aiUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rows }),
+    body: JSON.stringify({ [payloadKey]: rows }),
     signal: AbortSignal.timeout(10_000),
   })
 
