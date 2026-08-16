@@ -82,3 +82,39 @@ test("publishOfflineMessages publishes shared direct topic", async () => {
   })
   assert.deepEqual(calls[1], calls[0])
 })
+
+test("publishOfflineMessages supports custom envelope topic and payload", async () => {
+  const calls = []
+  const mqttClient = {
+    connected: true,
+    publish: (topic, payloadText, options, callback) => {
+      calls.push({ topic, payloadText, options })
+      callback(null)
+    },
+  }
+
+  attachPublishHelpers(mqttClient)
+
+  await mqttClient.publishOfflineMessages("202111", [
+    {
+      commandEnvelope: {
+        topic: "device/direct",
+        payload: {
+          mb: "010600010001",
+          sn: 1,
+          ack: 0,
+          crc: 1,
+          uart: 6,
+        },
+      },
+    },
+  ])
+
+  assert.equal(calls.length, 2)
+  assert.deepEqual(calls[0], {
+    topic: "device/direct",
+    payloadText: '{"mb":"010600010001","sn":1,"ack":0,"crc":1,"uart":6}',
+    options: { qos: 1, retain: false },
+  })
+  assert.deepEqual(calls[1], calls[0])
+})

@@ -1,5 +1,6 @@
 const { query } = require("./query")
 const { buildDirectTypesSql } = require("./directRepositorySql")
+const { ensureControlConfigSchema } = require("../services/controlConfigSchema")
 
 // Repository 层只做一件事：封装和 t_direct / t_direct_config 相关的 SQL。
 // 这样 service 层可以专心处理业务流程，不用直接拼数据库细节。
@@ -15,6 +16,9 @@ const globalSql = `
     c.min,
     c.max,
     c.topic,
+    c.publish_topic,
+    c.payload_template,
+    c.value_map,
     c.options,
     COALESCE(g.value, 'off') AS value,
     p.value AS papa_value
@@ -35,6 +39,9 @@ const deviceSql = `
     c.min,
     c.max,
     c.topic,
+    c.publish_topic,
+    c.payload_template,
+    c.value_map,
     c.options,
     COALESCE(d.value, g.value, 'off') AS value,
     COALESCE(pd.value, pg.value) AS papa_value
@@ -47,10 +54,16 @@ const deviceSql = `
 `
 
 // 查询“全局指令树”的原始行数据。
-const getGlobalConfigRows = () => query(globalSql)
+const getGlobalConfigRows = async () => {
+  await ensureControlConfigSchema()
+  return query(globalSql)
+}
 
 // 查询“某台设备的指令树”原始行数据。
-const getDeviceConfigRows = (dNo) => query(deviceSql, [dNo, dNo])
+const getDeviceConfigRows = async (dNo) => {
+  await ensureControlConfigSchema()
+  return query(deviceSql, [dNo, dNo])
+}
 
 const upsertGlobalDirect = (configId, value) => {
   // 全局指令值用 UPSERT，避免调用方先查再写。
@@ -75,16 +88,10 @@ const insertDeviceDirectValue = (configId, value, dNo) => {
 }
 
 const getDirectConfigById = async (configId) => {
-  const sql = `select id, t_name, topic from t_direct_config where id = ?`
+  await ensureControlConfigSchema()
+  const sql = `select id, t_name, topic, publish_topic, payload_template, value_map from t_direct_config where id = ?`
   const rows = await query(sql, [configId])
   return rows[0] || null
-}
-
-const getTopicByConfigId = async (configId) => {
-  // 指令下发时，真正发到哪个 MQTT 主题，取决于这里查到的 topic。
-  const sql = `select topic from t_direct_config where id = ?`
-  const rows = await query(sql, [configId])
-  return rows[0]?.topic || null
 }
 
 const getGlobalDirectValue = async (configId) => {
@@ -124,7 +131,6 @@ module.exports = {
   getDirectTypes,
   getGlobalConfigRows,
   getGlobalDirectValue,
-  getTopicByConfigId,
   insertDeviceDirectValue,
   updateDeviceDirectValue,
   upsertGlobalDirect,

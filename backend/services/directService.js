@@ -1,6 +1,6 @@
 const mqttClient = require("../mqtt")
 const heartbeat = require("../mqtt/mqtt_hander/heartbeat")
-const { buildDeviceCommandPayload } = require("../mqtt/commandMapper")
+const { buildDeviceCommandEnvelope } = require("../mqtt/commandMapper")
 const directHistoryRepository = require("../repositories/directHistoryRepository")
 const directRepository = require("../repositories/directRepository")
 const { buildTree } = require("../utils/directTree")
@@ -30,29 +30,32 @@ const getDirectTrees = async (dNo) => {
   }
 }
 
-const dispatchGlobalCommand = async (configId, topic, value) => {
+const dispatchGlobalCommand = async (config, value) => {
   // 全局指令的含义是“对所有设备都生效”，所以这里要遍历所有设备编号。
   const deviceNumbers = await directRepository.getAllDeviceNumbers()
 
   deviceNumbers.forEach((dNo) => {
     const status = heartbeat.getDeviceStatus(dNo)
     // 先把页面/数据库里的值翻译成设备端真正认识的 payload。
-    const commandPayload = buildDeviceCommandPayload({
+    const commandEnvelope = buildDeviceCommandEnvelope({
       d_no: dNo,
-      config_id: configId,
-      topic,
+      config_id: config?.id,
+      topic: config?.topic,
+      publish_topic: config?.publish_topic,
+      payload_template: config?.payload_template,
+      value_map: config?.value_map,
       value,
     })
 
     // 在线设备立即发，离线设备先缓存，等恢复在线后补发。
     if (status && status.status === "online") {
-      mqttClient.publishToDevice("device/direct", commandPayload).catch((error) => {
+      mqttClient.publishToDevice(commandEnvelope.topic, commandEnvelope.payload).catch((error) => {
         console.error(`发送全局指令到设备 ${dNo} 失败:`, error)
       })
       return
     }
 
-    heartbeat.storeOfflineMessage(dNo, { commandPayload })
+    heartbeat.storeOfflineMessage(dNo, { commandEnvelope })
   })
 
   console.log(`全局指令已发送给 ${deviceNumbers.length} 个设备`)
@@ -76,43 +79,40 @@ const updateGlobalDirect = async ({ config_id, f_type, value }) => {
     remark: "应用层下发",
   })
 
-  directRepository
-    .getTopicByConfigId(config_id)
-    .then((topic) => {
-      if (!topic) return
-      return dispatchGlobalCommand(config_id, topic, newValue)
-    })
-    .catch((error) => {
-      console.error("全局指令下发失败:", error)
-    })
+  if (!config) return
+
+  dispatchGlobalCommand(config, newValue).catch((error) => {
+    console.error("全局指令下发失败:", error)
+  })
 }
 
 const dispatchDeviceCommand = async (dNo, configId, newValue) => {
   // 单设备指令比全局指令少一步“遍历所有设备”，其他思路一致。
-  const topic = await directRepository.getTopicByConfigId(configId)
-  if (!topic) {
-    throw new Error("未找到对应的topic")
+  const config = await directRepository.getDirectConfigById(configId)
+  if (!config) {
+    throw new Error("未找到对应的指令配置")
   }
 
-  const payload = {
+  const commandEnvelope = buildDeviceCommandEnvelope({
     d_no: dNo,
     config_id: configId,
+    topic: config.topic,
+    publish_topic: config.publish_topic,
+    payload_template: config.payload_template,
+    value_map: config.value_map,
     value: newValue,
-    topic,
-  }
-
-  const commandPayload = buildDeviceCommandPayload(payload)
+  })
   const status = heartbeat.getDeviceStatus(dNo)
 
   if (status && status.status === "online") {
-    mqttClient.publishToDevice("device/direct", commandPayload).catch((error) => {
+    mqttClient.publishToDevice(commandEnvelope.topic, commandEnvelope.payload).catch((error) => {
       console.error("发送指令失败:", error)
     })
     return
   }
 
   heartbeat.storeOfflineMessage(dNo, {
-    commandPayload,
+    commandEnvelope,
   })
 }
 

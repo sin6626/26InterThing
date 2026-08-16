@@ -81,8 +81,8 @@ const attachPublishHelpers = (mqttClient) => {
           continue
         }
 
-        const topic = "device/direct"
-        const payload = { d_no: deviceId, ...(msg.commandPayload || msg) }
+        const topic = msg.commandEnvelope?.topic || "device/direct"
+        const payload = msg.commandEnvelope?.payload || { d_no: deviceId, ...(msg.commandPayload || msg) }
         await mqttClient.publishToDevice(topic, payload)
 
         if (index < messages.length - 1) {
