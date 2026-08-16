@@ -53,11 +53,9 @@ mqttClient.on("connect", () => {
 
 // 所有原始 MQTT 消息都会先走这里，再交给 topicDispatcher 做分类处理。
 mqttClient.on("message", (topic, payload) => {
-  try {
-    handleIncomingMessage(topic, payload)
-  } catch (error) {
-    console.error("解析MQTT消息失败:", error)
-  }
+  Promise.resolve(handleIncomingMessage(topic, payload)).catch((error) => {
+    console.error("处理MQTT消息失败:", error)
+  })
 })
 
 // 定时检查心跳超时，把设备从 online 切到 offline。

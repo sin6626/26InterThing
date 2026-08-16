@@ -1,5 +1,17 @@
 const { getAlarmLevel, normalizeErrorCode, VSTATUS_TEXT } = require("./alarm")
 
+const parseIncomingPayload = (topic, rawStr) => {
+  try {
+    return JSON.parse(rawStr)
+  } catch (error) {
+    console.error(`[MQTT消息解析失败] topic=${topic}，原始payload不是合法JSON`, {
+      raw: rawStr,
+      error: error.message,
+    })
+    return null
+  }
+}
+
 // MQTT 消息分类分发器：
 // 按 topic 后缀把消息路由到对应模块。
 const createTopicDispatcher = ({
@@ -13,7 +25,11 @@ const createTopicDispatcher = ({
     const rawStr = payload.toString()
     console.log("[MQTT收到原始数据]", topic, "|", rawStr)
 
-    const data = JSON.parse(rawStr)
+    const data = parseIncomingPayload(topic, rawStr)
+    if (!data) {
+      return
+    }
+
     const deviceId = data.d_no
 
     if (!deviceId) {

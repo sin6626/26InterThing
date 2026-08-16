@@ -61,3 +61,52 @@ test("createTopicDispatcher keeps sensor d_no from payload on shared topic", asy
     },
   ])
 })
+
+test("createTopicDispatcher ignores malformed JSON payloads without throwing", async () => {
+  const broadcasts = []
+  const saveCalls = []
+  const heartbeatCalls = []
+  const directCalls = []
+  const errors = []
+  const originalConsoleError = console.error
+  console.error = (...args) => {
+    errors.push(args)
+  }
+
+  try {
+    const dispatch = createTopicDispatcher({
+      broadcastToClients: (type, data) => {
+        broadcasts.push({ type, data })
+      },
+      directHandler: {
+        updateDirect: (...args) => {
+          directCalls.push(args)
+        },
+      },
+      heartbeatHandler: {
+        handleHeartbeat: (...args) => {
+          heartbeatCalls.push(args)
+        },
+      },
+      saveHandler: {
+        saveSensorData: (...args) => {
+          saveCalls.push(args)
+        },
+        savebehaviorData: () => {},
+        saveErrorData: () => {},
+      },
+      timeSyncHandler: null,
+    })
+
+    await dispatch("device/sensor", Buffer.from('{"d_no":e46488d793284429,"imei":,"iccid":,"time":2026-08-16 20:13:10}'))
+
+    assert.deepEqual(broadcasts, [])
+    assert.deepEqual(saveCalls, [])
+    assert.deepEqual(heartbeatCalls, [])
+    assert.deepEqual(directCalls, [])
+    assert.equal(errors.length, 1)
+    assert.match(String(errors[0][0]), /MQTT消息解析失败/)
+  } finally {
+    console.error = originalConsoleError
+  }
+})
