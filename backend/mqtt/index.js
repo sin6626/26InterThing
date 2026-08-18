@@ -30,23 +30,6 @@ const mqttClient = mqtt.connect(mqttOptions)
 attachPublishHelpers(mqttClient)
 
 // 时间同步服务本身只管“生成要发的 payload”，
-
-const mqttOptions = {
-  clientId: env.MQTT_CLIENT_ID || "portfolio_admin",
-  host: env.MQTT_HOST || "localhost",
-  port: Number(env.MQTT_PORT || 1883),
-  username: env.MQTT_USERNAME || "sin",
-  password: env.MQTT_PASSWORD || "1234",
-}
-
-// 建立 MQTT 连接后，整个应用层就具备了“和设备侧双向通信”的能力。
-const mqttClient = mqtt.connect(mqttOptions)
-
-// 给 mqttClient 挂上统一的发送辅助方法：
-// publishToDevice / updateTime / updateDeviceTime / publishOfflineMessages。
-attachPublishHelpers(mqttClient)
-
-// 时间同步服务本身只管“生成要发的 payload”，
 // 真正的 MQTT 发送还是通过 mqttClient 上面挂的方法完成。
 const timeSyncHandler = createTimeSyncService({ mqttClient })
 heartbeat.setTimeSyncHandler((deviceId) => {
