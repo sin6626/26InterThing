@@ -87,6 +87,10 @@ ensureDirectHistoryTable()
     console.error("初始化指令操作历史表失败:", error.message)
   })
 
+// 启动水循环自动控制引擎。
+const { initEngine: initWaterControlEngine } = require("./services/waterControlEngine")
+initWaterControlEngine()
+
 // 启动 HTTP 服务。
 const server = app.listen(port, () => {
   console.log(`Node 接口服务已启动，地址：http://localhost:${port}`)

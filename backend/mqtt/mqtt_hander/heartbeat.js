@@ -37,14 +37,23 @@ const getLevel = (code) => {
   return "error"
 }
 
-const buildStatusPayload = (deviceId, statusInfo) => ({
-  d_no: deviceId,
-  status: statusInfo.status,
-  vstatus: statusInfo.status === "online" ? statusInfo.vstatus : null,
-  level: statusInfo.status === "online" ? statusInfo.level : "unknown",
-  text: statusInfo.status === "online" ? statusInfo.text : "离线",
-  updated_at: statusInfo.updated_at,
-})
+const buildStatusPayload = (deviceId, statusInfo) => {
+  let control = null
+  try {
+    const waterControlEngine = require("../../services/waterControlEngine")
+    control = waterControlEngine.getDeviceControlStatus(deviceId)
+  } catch {}
+
+  return {
+    d_no: deviceId,
+    status: statusInfo.status,
+    vstatus: statusInfo.status === "online" ? statusInfo.vstatus : null,
+    level: statusInfo.status === "online" ? statusInfo.level : "unknown",
+    text: statusInfo.status === "online" ? statusInfo.text : "离线",
+    updated_at: statusInfo.updated_at,
+    control,
+  }
+}
 
 exports.handleHeartbeat = (deviceId, message) => {
   // 只要收到心跳，就认为设备当前在线。
@@ -147,6 +156,11 @@ exports.getDeviceStatus = (deviceId) => {
 // 新增：获取所有设备状态方法
 exports.getAllDeviceStatus = () => {
   const result = {}
+  let waterControlEngine = null
+  try {
+    waterControlEngine = require("../../services/waterControlEngine")
+  } catch {}
+
   for (const [deviceId, status] of deviceStatus) {
     result[deviceId] = {
       status: status.status,
@@ -154,6 +168,7 @@ exports.getAllDeviceStatus = () => {
       level: status.status === "online" ? status.level : "unknown",
       text: status.status === "online" ? status.text : "离线",
       updated_at: status.updated_at || null,
+      control: waterControlEngine ? waterControlEngine.getDeviceControlStatus(deviceId) : null,
     }
   }
   return result

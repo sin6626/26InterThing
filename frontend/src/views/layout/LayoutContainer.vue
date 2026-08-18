@@ -78,6 +78,27 @@ const statusClass = (statusInfo) => {
   return Number(statusInfo.vstatus ?? 0) === 0 ? 'online' : 'error'
 }
 
+// 水循环状态机标签类型与文本
+const controlTagType = (control) => {
+  if (!control) return 'info'
+  if (control.mode === 'manual') return 'info'
+  if (control.fsmState === 'FAULT') return 'danger'
+  if (control.fsmState === 'BUILDING_FLOW') return 'warning'
+  if (control.fsmState === 'RUNNING') return 'success'
+  if (control.fsmState === 'COOLING') return 'primary'
+  return 'info'
+}
+
+const controlTagText = (control) => {
+  if (!control) return ''
+  if (control.mode === 'manual') return '手动'
+  if (control.fsmState === 'FAULT') return `故障: ${control.faultReason || '停机'}`
+  if (control.fsmState === 'BUILDING_FLOW') return `建流中 ${control.countdown || 0}s`
+  if (control.fsmState === 'RUNNING') return '自动运行中'
+  if (control.fsmState === 'COOLING') return `冷却中 ${control.countdown || 0}s`
+  return control.fsmText || '已停止'
+}
+
 onMounted(async () => {
   // 先拉一份全量状态，再接入实时推送。
   await fetchDeviceStatus()
@@ -204,6 +225,14 @@ onBeforeUnmount(() => {
                 :class="statusClass(status)"
               ></span>
               <span class="device-no">{{ dNo }}</span>
+              <el-tag
+                v-if="status?.control"
+                size="small"
+                :type="controlTagType(status.control)"
+                style="margin-left: 4px; font-size: 11px;"
+              >
+                {{ controlTagText(status.control) }}
+              </el-tag>
             </div>
             <span v-if="Object.keys(deviceStatusMap).length === 0" class="no-devices">
               暂无设备
@@ -217,6 +246,14 @@ onBeforeUnmount(() => {
                 :class="statusClass(deviceStatusMap['202111'])"
               ></span>
               <span class="device-no">202111</span>
+              <el-tag
+                v-if="deviceStatusMap['202111']?.control"
+                size="small"
+                :type="controlTagType(deviceStatusMap['202111']?.control)"
+                style="margin-left: 4px; font-size: 11px;"
+              >
+                {{ controlTagText(deviceStatusMap['202111']?.control) }}
+              </el-tag>
             </div>
           </div>
         </div>

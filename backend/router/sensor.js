@@ -70,4 +70,11 @@ router.post("/updateDirectGlobal", direct_hander.updateGlobalDirect);
 // 指令页面手动更新时间会先打到这里，再由应用层下发 MQTT 时间消息。
 router.post("/updateTime", direct_hander.updateTime);
 
+// ---------------------------------------------------
+// 水循环控制相关接口：
+router.post("/waterControl/start", direct_hander.startWaterControl);
+router.post("/waterControl/stop", direct_hander.stopWaterControl);
+router.post("/waterControl/reset", direct_hander.resetWaterControlFault);
+router.get("/waterControl/status/:d_no", direct_hander.getWaterControlStatus);
+
 module.exports = router;

@@ -69,6 +69,19 @@ const updateGlobalDirect = async ({ config_id, f_type, value }) => {
     directRepository.getGlobalDirectValue(config_id),
     directRepository.getDirectConfigById(config_id),
   ])
+
+  // 手动开启加热前进行安全拦截审查
+  if (config?.topic === "heater" && newValue === "on") {
+    const waterControlEngine = require("./waterControlEngine")
+    const deviceNumbers = await directRepository.getAllDeviceNumbers()
+    for (const dNo of deviceNumbers) {
+      const safety = await waterControlEngine.checkHeaterSafety(dNo)
+      if (!safety.safe) {
+        throw new Error(`设备 ${dNo} 安全拦截: ${safety.reason}`)
+      }
+    }
+  }
+
   await directRepository.upsertGlobalDirect(config_id, newValue)
   await directHistoryRepository.insertDirectHistory({
     config_id,
@@ -80,6 +93,21 @@ const updateGlobalDirect = async ({ config_id, f_type, value }) => {
   })
 
   if (!config) return
+
+  // 同步水循环引擎状态
+  try {
+    const waterControlEngine = require("./waterControlEngine")
+    const deviceNumbers = await directRepository.getAllDeviceNumbers()
+    deviceNumbers.forEach((dNo) => {
+      const state = waterControlEngine.getOrCreateDeviceState(dNo)
+      if (config.topic === "master") {
+        state.mode = newValue === "on" ? "auto" : "manual"
+        if (newValue === "off") waterControlEngine.stopAuto(dNo)
+      }
+      if (config.topic === "pump") state.pumpState = newValue
+      if (config.topic === "heater") state.heaterState = newValue
+    })
+  } catch {}
 
   dispatchGlobalCommand(config, newValue).catch((error) => {
     console.error("全局指令下发失败:", error)
@@ -123,6 +151,16 @@ const updateDeviceDirect = async (dNo, { config_id, f_type, value }) => {
     directRepository.getDeviceDirectValue(config_id, dNo),
     directRepository.getDirectConfigById(config_id),
   ])
+
+  // 手动开启加热前进行安全拦截审查
+  if (config?.topic === "heater" && newValue === "on") {
+    const waterControlEngine = require("./waterControlEngine")
+    const safety = await waterControlEngine.checkHeaterSafety(dNo)
+    if (!safety.safe) {
+      throw new Error(`安全拦截: ${safety.reason}`)
+    }
+  }
+
   const results = await directRepository.updateDeviceDirectValue(config_id, newValue, dNo)
 
   if (results.affectedRows === 0) {
@@ -138,6 +176,18 @@ const updateDeviceDirect = async (dNo, { config_id, f_type, value }) => {
     old_value: oldValue,
     remark: "应用层下发",
   })
+
+  // 同步水循环引擎状态
+  try {
+    const waterControlEngine = require("./waterControlEngine")
+    const state = waterControlEngine.getOrCreateDeviceState(dNo)
+    if (config?.topic === "master") {
+      state.mode = newValue === "on" ? "auto" : "manual"
+      if (newValue === "off") waterControlEngine.stopAuto(dNo)
+    }
+    if (config?.topic === "pump") state.pumpState = newValue
+    if (config?.topic === "heater") state.heaterState = newValue
+  } catch {}
 
   dispatchDeviceCommand(dNo, config_id, newValue).catch((error) => {
     console.error("设备指令下发失败:", error)
@@ -177,10 +227,35 @@ const getDirectTypes = async () => {
   }
 }
 
+const startWaterControl = async (dNo) => {
+  const waterControlEngine = require("./waterControlEngine")
+  return waterControlEngine.startAuto(dNo)
+}
+
+const stopWaterControl = async (dNo) => {
+  const waterControlEngine = require("./waterControlEngine")
+  return waterControlEngine.stopAuto(dNo)
+}
+
+const resetWaterControlFault = async (dNo) => {
+  const waterControlEngine = require("./waterControlEngine")
+  return waterControlEngine.resetFault(dNo)
+}
+
+const getWaterControlStatus = (dNo) => {
+  const waterControlEngine = require("./waterControlEngine")
+  return waterControlEngine.getDeviceControlStatus(dNo)
+}
+
 module.exports = {
+  dispatchDeviceCommand,
   getDirectHistory,
   getDirectTrees,
   getDirectTypes,
+  getWaterControlStatus,
+  resetWaterControlFault,
+  startWaterControl,
+  stopWaterControl,
   updateDeviceDirect,
   updateGlobalDirect,
   updateTime,

@@ -113,3 +113,21 @@ export const updateDirectGlobal = (data) => {
 export const updateTime = (time) => {
   return request.post(`/api/updateTime`, { time })
 }
+
+// ---------------------------------------------------
+// 水循环控制相关接口：
+export const startWaterControl = (d_no) => {
+  return request.post('/api/waterControl/start', { d_no })
+}
+
+export const stopWaterControl = (d_no) => {
+  return request.post('/api/waterControl/stop', { d_no })
+}
+
+export const resetWaterControlFault = (d_no) => {
+  return request.post('/api/waterControl/reset', { d_no })
+}
+
+export const getWaterControlStatus = (d_no) => {
+  return request.get(`/api/waterControl/status/${d_no}`)
+}

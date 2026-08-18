@@ -1,7 +1,15 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getDirectInfo, updateDirect, updateDirectGlobal, updateTime } from '@/api/sensor.js'
+import {
+  getDirectInfo,
+  resetWaterControlFault,
+  startWaterControl,
+  stopWaterControl,
+  updateDirect,
+  updateDirectGlobal,
+  updateTime,
+} from '@/api/sensor.js'
 import { useDeviceNumbers } from '@/composables/useDeviceNumbers'
 import { useSwitchStore } from '@/stores/switch'
 
@@ -20,6 +28,7 @@ const defaultProps = {
 
 const globalTreeData = ref([])
 const deviceTreeData = ref([])
+const actionLoading = ref(false)
 
 // 以某台设备为参照，同时拿到全局默认树和单设备覆盖树。
 const getList = async (no) => {
@@ -49,9 +58,14 @@ const normalizeUpdatePayload = (data) => ({
 
 // 全局指令更新后重新拉取列表，保证页面展示的是数据库最新值。
 const changeGlobalHandle = async (data) => {
-  await updateDirectGlobal(normalizeUpdatePayload(data))
-  ElMessage.success('全局指令更新成功')
-  await getList(d_noValue.value)
+  try {
+    await updateDirectGlobal(normalizeUpdatePayload(data))
+    ElMessage.success('全局指令更新成功')
+  } catch (error) {
+    ElMessage.error(error.message || '更新失败')
+  } finally {
+    await getList(d_noValue.value)
+  }
 }
 
 // 单设备指令要求先选设备，再按相同协议下发。
@@ -60,9 +74,57 @@ const changeDeviceHandle = async (data) => {
     ElMessage.warning('请先选择设备编号')
     return
   }
-  await updateDirect(normalizeUpdatePayload(data), d_noValue.value)
-  ElMessage.success('设备单独指令更新成功')
-  await getList(d_noValue.value)
+  try {
+    await updateDirect(normalizeUpdatePayload(data), d_noValue.value)
+    ElMessage.success('设备单独指令更新成功')
+  } catch (error) {
+    ElMessage.error(error.message || '更新失败')
+  } finally {
+    await getList(d_noValue.value)
+  }
+}
+
+// 水循环自动运行启停与复位
+const handleStartWaterControl = async () => {
+  const dNo = d_noValue.value || options.value[0]?.value || '202111'
+  actionLoading.value = true
+  try {
+    const res = await startWaterControl(dNo)
+    ElMessage.success(res.message || '水循环自动运行已启动')
+  } catch (error) {
+    ElMessage.error(error.message || '启动失败')
+  } finally {
+    actionLoading.value = false
+    await getList(d_noValue.value)
+  }
+}
+
+const handleStopWaterControl = async () => {
+  const dNo = d_noValue.value || options.value[0]?.value || '202111'
+  actionLoading.value = true
+  try {
+    const res = await stopWaterControl(dNo)
+    ElMessage.success(res.message || '已发出停止指令，进入冷却流程')
+  } catch (error) {
+    ElMessage.error(error.message || '停止失败')
+  } finally {
+    actionLoading.value = false
+    await getList(d_noValue.value)
+  }
+}
+
+const handleResetWaterControl = async () => {
+  const dNo = d_noValue.value || options.value[0]?.value || '202111'
+  actionLoading.value = true
+  try {
+    const res = await resetWaterControlFault(dNo)
+    ElMessage.success(res.message || '故障已复位')
+  } catch (error) {
+    ElMessage.error(error.message || '复位失败')
+  } finally {
+    actionLoading.value = false
+    await getList(d_noValue.value)
+  }
 }
 
 // 手动更新时间走独立接口，最终的 topic 和 payload 由后端统一处理。
@@ -95,13 +157,37 @@ onMounted(async () => {
   <page-container title="指令信息">
     <template #extra>
       <div class="toolbar">
+        <el-button-group>
+          <el-button
+            type="success"
+            :loading="actionLoading"
+            @click="handleStartWaterControl"
+          >
+            启动自动运行
+          </el-button>
+          <el-button
+            type="danger"
+            :loading="actionLoading"
+            @click="handleStopWaterControl"
+          >
+            停止
+          </el-button>
+          <el-button
+            type="warning"
+            :loading="actionLoading"
+            @click="handleResetWaterControl"
+          >
+            故障复位
+          </el-button>
+        </el-button-group>
+
         <el-date-picker
           v-model="selectedUpdateTime"
           type="datetime"
           placeholder="选择时间"
           format="YYYY-MM-DD HH:mm:ss"
           value-format="YYYY-MM-DD HH:mm:ss"
-          style="width: 200px"
+          style="width: 190px"
         />
         <el-button type="primary" @click="timeUpdate">更新时间</el-button>
       </div>

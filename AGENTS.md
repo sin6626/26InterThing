@@ -27,4 +27,12 @@
 - MQTT 入站如果收到非法 JSON，应用层现在会记录原始 payload 并忽略该条消息，不再因为 `JSON.parse` 直接崩溃；但要真正入库和展示，设备端仍必须发送合法 JSON。
 - 旧 PID 特殊补丁逻辑已移除。
 - 智能判定已预留 HTTP 转发：后端启动时读取 `backend/.env`，配置 `AI_RECOGNIZE_URL` 后，`/api/sensor/recognize` 会把前端勾选的历史传感器数据转发给题目提供的 Python/YOLO 服务；请求体优先由 `backend/config/ai-recognize-payload.json` 模板决定；未配置 URL 时返回待接入提示。
+- 水循环自动控制引擎（`waterControlEngine.js`）：
+  - 基于配置驱动（复用 `t_direct_config` 现有的 `topic` 语义键如 `target_temperature`、`min_safe_flow`、`pump`、`heater` 等）；
+  - 实现状态机（`STOPPED` / `BUILDING_FLOW` / `RUNNING` / `COOLING` / `FAULT`）；
+  - 实现五重安全联锁与保护：启动限时 5s 建流超时保护、运行中低流量（<0.5L/min 持续 2s）防干烧保护、超温（>=45℃）关加热留泵散热保护、超压（>=150kPa）急停保护、传感器数据超时（>5s）保护；
+  - 实现出口水温回差控温（$T_{out} \le 34.5℃$ 开加热，$T_{out} \ge 35.0℃$ 关加热）；
+  - 实现手动开启加热前 5 项安全前置审查拦截与开关自动回滚；
+  - 自动动作留痕至 `t_direct_history`，故障报警留痕至 `t_error_msg`；
+  - 顶部 Header 紧凑展示实时设备状态标签（`手动` / `已停止` / `建流中` / `自动运行中` / `冷却中` / `故障`）。
 - 现场限制：比赛局域网禁止外网；如果题目不涉及移动应用开发，不允许使用手机。

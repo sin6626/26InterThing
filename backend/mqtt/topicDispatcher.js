@@ -20,6 +20,7 @@ const createTopicDispatcher = ({
   heartbeatHandler,
   saveHandler,
   timeSyncHandler,
+  waterControlHandler,
 }) => {
   return async (topic, payload) => {
     const rawStr = payload.toString()
@@ -43,7 +44,7 @@ const createTopicDispatcher = ({
       return
     }
 
-    // 传感器数据：入库 + 推送给前端实时页。
+    // 传感器数据：入库 + 推送给前端实时页 + 驱动水循环自动控制引擎。
     if (topic === "device/sensor") {
       saveHandler.saveSensorData(topic, payload, (err) => {
         if (err) {
@@ -53,6 +54,12 @@ const createTopicDispatcher = ({
 
         broadcastToClients("sensor_realtime", data)
       })
+
+      if (waterControlHandler && typeof waterControlHandler.onSensorData === "function") {
+        Promise.resolve(waterControlHandler.onSensorData(deviceId, data)).catch((err) => {
+          console.error("[WaterControl] 传感器数据处理异常:", err)
+        })
+      }
       return
     }
 

@@ -75,3 +75,60 @@ exports.types = async (req, res) => {
     res.cc(error)
   }
 }
+
+// 水循环自动运行启动
+exports.startWaterControl = async (req, res) => {
+  try {
+    const dNo = req.body?.d_no || "202111"
+    const result = await directService.startWaterControl(dNo)
+    res.send({
+      status: 0,
+      message: result.message,
+    })
+  } catch (error) {
+    res.cc(error)
+  }
+}
+
+// 水循环停止（进入冷却延时）
+exports.stopWaterControl = async (req, res) => {
+  try {
+    const dNo = req.body?.d_no || "202111"
+    const result = await directService.stopWaterControl(dNo)
+    res.send({
+      status: 0,
+      message: result.message,
+    })
+  } catch (error) {
+    res.cc(error)
+  }
+}
+
+// 水循环故障复位
+exports.resetWaterControlFault = async (req, res) => {
+  try {
+    const dNo = req.body?.d_no || "202111"
+    const result = await directService.resetWaterControlFault(dNo)
+    res.send({
+      status: 0,
+      message: result.message,
+    })
+  } catch (error) {
+    res.cc(error)
+  }
+}
+
+// 获取水循环实时状态
+exports.getWaterControlStatus = async (req, res) => {
+  try {
+    const dNo = req.params?.d_no || "202111"
+    const data = directService.getWaterControlStatus(dNo)
+    res.send({
+      status: 0,
+      message: "查询成功",
+      data,
+    })
+  } catch (error) {
+    res.cc(error)
+  }
+}

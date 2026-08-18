@@ -30,11 +30,30 @@ const mqttClient = mqtt.connect(mqttOptions)
 attachPublishHelpers(mqttClient)
 
 // 时间同步服务本身只管“生成要发的 payload”，
+
+const mqttOptions = {
+  clientId: env.MQTT_CLIENT_ID || "portfolio_admin",
+  host: env.MQTT_HOST || "localhost",
+  port: Number(env.MQTT_PORT || 1883),
+  username: env.MQTT_USERNAME || "sin",
+  password: env.MQTT_PASSWORD || "1234",
+}
+
+// 建立 MQTT 连接后，整个应用层就具备了“和设备侧双向通信”的能力。
+const mqttClient = mqtt.connect(mqttOptions)
+
+// 给 mqttClient 挂上统一的发送辅助方法：
+// publishToDevice / updateTime / updateDeviceTime / publishOfflineMessages。
+attachPublishHelpers(mqttClient)
+
+// 时间同步服务本身只管“生成要发的 payload”，
 // 真正的 MQTT 发送还是通过 mqttClient 上面挂的方法完成。
 const timeSyncHandler = createTimeSyncService({ mqttClient })
 heartbeat.setTimeSyncHandler((deviceId) => {
   return timeSyncHandler.handleTimeRequest(deviceId, { reason: "reconnect" })
 })
+
+const waterControlEngine = require("../services/waterControlEngine")
 
 // 收到每条 MQTT 消息后的“总分发器”。
 const handleIncomingMessage = createTopicDispatcher({
@@ -43,6 +62,7 @@ const handleIncomingMessage = createTopicDispatcher({
   heartbeatHandler: heartbeat,
   saveHandler: save,
   timeSyncHandler,
+  waterControlHandler: waterControlEngine,
 })
 
 // 连接成功后再订阅主题，避免应用启动时就盲目订阅。
@@ -59,9 +79,12 @@ mqttClient.on("message", (topic, payload) => {
 })
 
 // 定时检查心跳超时，把设备从 online 切到 offline。
-setInterval(() => {
+const offlineCheckTimer = setInterval(() => {
   heartbeat.checkOfflineDevices()
 }, 3000)
+if (offlineCheckTimer && typeof offlineCheckTimer.unref === "function") {
+  offlineCheckTimer.unref()
+}
 
 mqttClient.on("error", (error) => {
   console.error("MQTT连接错误:", error)

@@ -47,6 +47,7 @@ test("createTopicDispatcher keeps sensor d_no from payload on shared topic", asy
       saveErrorData: () => {},
     },
     timeSyncHandler: null,
+    waterControlHandler: { onSensorData: () => {} },
   })
 
   await dispatch("device/sensor", Buffer.from('{"d_no":"202111","temp":26.5}'))
