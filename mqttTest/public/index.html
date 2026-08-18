@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MQTT Test Console</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1020;
+        --panel: #121933;
+        --panel-soft: #1b2446;
+        --text: #eef2ff;
+        --muted: #9aa4c7;
+        --accent: #5eead4;
+        --accent-2: #60a5fa;
+        --danger: #fb7185;
+        --warning: #fbbf24;
+        --border: rgba(255, 255, 255, 0.08);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        background:
+          radial-gradient(circle at top right, rgba(96, 165, 250, 0.18), transparent 25%),
+          radial-gradient(circle at top left, rgba(94, 234, 212, 0.12), transparent 28%),
+          var(--bg);
+        color: var(--text);
+      }
+
+      .page { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+      .hero {
+        display: flex; justify-content: space-between; gap: 16px;
+        align-items: center; margin-bottom: 20px;
+      }
+
+      .hero h1 { margin: 0 0 8px; font-size: 28px; }
+      .hero p { margin: 0; color: var(--muted); }
+
+      .status-chip {
+        padding: 10px 14px; border-radius: 999px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--border); font-size: 14px; white-space: nowrap;
+        transition: transform 0.18s ease, background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
+      }
+      .status-chip.online { background: rgba(94, 234, 212, 0.16); border-color: rgba(94, 234, 212, 0.45); box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.12); }
+      .status-chip.offline { background: rgba(251, 113, 133, 0.12); border-color: rgba(251, 113, 133, 0.35); }
+      .status-chip.pending { background: rgba(96, 165, 250, 0.14); border-color: rgba(96, 165, 250, 0.35); }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 16px;
+      }
+
+      .panel {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 16px;
+        box-shadow: 0 20px 40px -28px rgba(0, 0, 0, 0.8);
+      }
+
+      .panel h2 { margin: 0 0 6px; font-size: 18px; }
+      .panel p { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+
+      .stack { display: grid; gap: 10px; }
+
+      label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+
+      input, textarea, select {
+        width: 100%;
+        border: 1px solid var(--border);
+        background: var(--panel-soft);
+        color: var(--text);
+        border-radius: 12px;
+        padding: 10px 12px;
+        font: inherit;
+      }
+
+      textarea { min-height: 100px; resize: vertical; }
+
+      .row { display: flex; gap: 10px; }
+      .row > * { flex: 1; }
+
+      button {
+        position: relative; overflow: hidden;
+        border: 0; border-radius: 12px;
+        padding: 10px 14px;
+        font: inherit; color: #08111f;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        cursor: pointer; font-weight: 700;
+        transition: transform 0.12s ease, box-shadow 0.18s ease, filter 0.18s ease, opacity 0.18s ease, background 0.18s ease, color 0.18s ease;
+        box-shadow: 0 14px 22px -18px rgba(96, 165, 250, 0.95);
+      }
+      button:hover { filter: brightness(1.04); box-shadow: 0 16px 28px -18px rgba(96, 165, 250, 0.9); }
+      button:active { transform: translateY(1px) scale(0.985); }
+      button:disabled { cursor: wait; opacity: 0.9; }
+
+      button.is-loading { color: rgba(8, 17, 31, 0.78); }
+      button.is-loading::after {
+        content: "";
+        display: inline-block;
+        width: 14px; height: 14px; margin-left: 8px;
+        vertical-align: -2px;
+        border-radius: 50%;
+        border: 2px solid rgba(8, 17, 31, 0.3);
+        border-top-color: rgba(8, 17, 31, 0.95);
+        animation: spin 0.72s linear infinite;
+      }
+
+      button.is-success {
+        background: linear-gradient(135deg, #34d399, #2dd4bf);
+        box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.24), 0 18px 34px -20px rgba(52, 211, 153, 0.95);
+      }
+
+      button.is-error {
+        color: white;
+        background: linear-gradient(135deg, #fb7185, #ef4444);
+        box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.2), 0 18px 34px -20px rgba(239, 68, 68, 0.95);
+      }
+
+      button.secondary {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid var(--border);
+      }
+
+      button.danger {
+        color: white;
+        background: linear-gradient(135deg, #fb7185, #ef4444);
+      }
+
+      button.warning {
+        color: #08111f;
+        background: linear-gradient(135deg, #fbbf24, #f59e0b);
+        box-shadow: 0 14px 22px -18px rgba(251, 191, 36, 0.85);
+      }
+
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: #09101f;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 14px;
+        min-height: 220px;
+        max-height: 520px;
+        overflow: auto;
+        color: #cdd6f4;
+      }
+
+      .field-row {
+        display: flex; gap: 8px; align-items: center;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid var(--border);
+        border-radius: 12px; padding: 6px 10px;
+      }
+      .field-row input { border-radius: 8px; padding: 8px 10px; }
+      .field-row .del-field {
+        flex: 0 0 30px; height: 30px; padding: 0; border-radius: 8px;
+        background: rgba(251,113,133,0.2); color: var(--danger);
+        font-size: 16px; font-weight: 400;
+      }
+      .field-row .del-field:hover { background: rgba(251,113,133,0.35); }
+
+      .hint { font-size: 12px; color: var(--muted); }
+
+      .feedback-banner {
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+        margin-bottom: 16px;
+        padding: 12px 14px;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--muted);
+        transition: border-color 0.22s ease, background 0.22s ease, box-shadow 0.22s ease, color 0.22s ease;
+      }
+      .feedback-banner strong { color: var(--text); }
+      .feedback-banner.pending { background: rgba(96, 165, 250, 0.12); border-color: rgba(96, 165, 250, 0.34); box-shadow: 0 12px 28px -24px rgba(96, 165, 250, 0.8); color: #d9e8ff; }
+      .feedback-banner.success { background: rgba(52, 211, 153, 0.12); border-color: rgba(52, 211, 153, 0.34); box-shadow: 0 12px 28px -24px rgba(52, 211, 153, 0.78); color: #dffcf3; }
+      .feedback-banner.error { background: rgba(251, 113, 133, 0.12); border-color: rgba(251, 113, 133, 0.34); box-shadow: 0 12px 28px -24px rgba(251, 113, 133, 0.85); color: #ffe2e7; }
+      .feedback-banner.idle { color: var(--muted); }
+
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="hero">
+        <div>
+          <h1>MQTT Test Console</h1>
+          <p>模拟设备端 — 对接竞赛后端平台的 MQTT 通信测试工具</p>
+        </div>
+        <div class="status-chip" id="status-chip">状态读取中...</div>
+      </div>
+
+      <div class="feedback-banner idle" id="feedback-banner">
+        <strong id="feedback-title">控制台已就绪</strong>
+        <span id="feedback-detail">点击任意操作按钮后，这里会立即显示执行状态。</span>
+      </div>
+
+      <div class="grid">
+        <!-- 基础参数 -->
+        <section class="panel">
+          <h2>基础参数</h2>
+          <p>设备号（d_no）会自动注入到每条消息的 payload 中。</p>
+          <div class="stack">
+            <label>
+              设备号 (d_no)
+              <input id="deviceId" value="202111" />
+            </label>
+            <label>
+              自定义 JSON Payload
+              <textarea id="payload">{"d_no":"202111","temp":26.5,"flow":18.6,"pressurre":12.4}</textarea>
+            </label>
+            <div class="hint">不填时，后端会用各接口自己的默认结构。</div>
+          </div>
+        </section>
+
+        <!-- 状态与自动心跳 -->
+        <section class="panel">
+          <h2>状态与自动心跳</h2>
+          <p>topic: <code>device/heartbeat</code>  &nbsp; payload: <code>{ d_no, VStatus, c_time }</code></p>
+          <div class="stack">
+            <div class="row">
+              <button class="secondary" id="refreshStatus">刷新状态</button>
+              <button id="sendHeartbeat">发送一次心跳</button>
+            </div>
+            <div class="row">
+              <label>
+                VStatus
+                <input id="vstatus" type="number" value="0" />
+              </label>
+              <label>
+                间隔 ms
+                <input id="intervalMs" type="number" value="3000" />
+              </label>
+            </div>
+            <div class="row">
+              <button id="startAutoHeartbeat">开始自动心跳</button>
+              <button class="danger" id="stopAutoHeartbeat">停止自动心跳</button>
+            </div>
+            <div class="row">
+              <button class="secondary" id="updateVstatus">更新 VStatus</button>
+              <button class="secondary" id="updateInterval">更新间隔</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 传感器 -->
+        <section class="panel">
+          <h2>传感器 (device/sensor)</h2>
+          <p>字段名和值都可自由增删改</p>
+          <div class="stack" id="sensorFields"></div>
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <button class="secondary" id="addSensorField" style="flex:1">+ 增加字段</button>
+            <button id="sendSensor" style="flex:2">发送</button>
+          </div>
+        </section>
+
+        <!-- 行为 -->
+        <section class="panel">
+          <h2>行为 (device/behavior)</h2>
+          <p>字段名和值都可自由增删改</p>
+          <div class="stack" id="behaviorFields"></div>
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <button class="secondary" id="addBehaviorField" style="flex:1">+ 增加字段</button>
+            <button id="sendBehavior" style="flex:2">发送</button>
+          </div>
+        </section>
+
+        <!-- 错误 -->
+        <section class="panel">
+          <h2>错误 (device/error)</h2>
+          <div class="stack">
+            <div class="row">
+              <label>e_no<input id="errorNo" value="E201" /></label>
+              <label>type<input id="errorType" value="6" /></label>
+            </div>
+            <label>e_msg<input id="errorMsg" value="管路压力过高" /></label>
+            <button id="sendError">发送</button>
+          </div>
+        </section>
+
+        <!-- 时间同步请求 + 指令上报 -->
+        <section class="panel">
+          <h2>其他</h2>
+          <div class="stack">
+            <label>reason<input id="timeRequestReason" value="power_on" /></label>
+            <button id="sendTimeRequest">时间同步请求</button>
+            <hr style="border-color:var(--border);margin:6px 0" />
+            <p style="margin:0;font-size:13px">指令上报 (device/direct)</p>
+            <div class="row">
+              <label>config_id<input id="directConfigId" type="number" value="7" /></label>
+              <label>value<input id="directValue" value="off" /></label>
+            </div>
+            <button id="sendDirectReport">上报</button>
+          </div>
+        </section>
+
+        <!-- 故障场景 -->
+        <section class="panel">
+          <h2>故障场景</h2>
+          <p>模拟故障（心跳+错误 → 等待 → 恢复心跳）。</p>
+          <div class="stack">
+            <div class="row">
+              <label>
+                故障码
+                <select id="faultCode"></select>
+              </label>
+              <label>
+                持续 ms
+                <input id="durationMs" type="number" value="5000" />
+              </label>
+            </div>
+            <div class="row">
+              <label>
+                e_no
+                <input id="faultErrorNo" value="E1001" />
+              </label>
+              <label>
+                e_msg
+                <input id="faultErrorMsg" value="模拟故障" />
+              </label>
+            </div>
+            <button class="danger" id="runFaultScenario">执行故障场景</button>
+          </div>
+        </section>
+
+        <!-- 接收的消息（占两列） -->
+        <section class="panel" style="grid-column: 1 / -1">
+          <h2>收到的消息（从后端/平台下发）</h2>
+          <p>
+            topic: <code>device/direct</code>（指令下发）&nbsp;
+            topic: <code>device/updateTime</code>（时间同步）
+          </p>
+          <div class="row" style="margin-bottom: 10px;">
+            <button class="secondary" id="refreshReceived">刷新接收消息</button>
+          </div>
+          <div class="stack">
+            <label>
+              <strong>收到的最新指令下发 (device/direct)</strong>
+              <pre id="receivedDirect" style="min-height:60px;max-height:160px;">暂无</pre>
+            </label>
+            <label>
+              <strong>收到的最新时间同步 (device/updateTime)</strong>
+              <pre id="receivedUpdateTime" style="min-height:60px;max-height:160px;">暂无</pre>
+            </label>
+          </div>
+        </section>
+
+        <!-- 响应日志 -->
+        <section class="panel" style="grid-column: 1 / -1">
+          <h2>响应日志</h2>
+          <p>所有接口响应和错误都会显示在这里。</p>
+          <pre id="output"></pre>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      const output = document.getElementById("output");
+      const statusChip = document.getElementById("status-chip");
+      const feedbackBanner = document.getElementById("feedback-banner");
+      const feedbackTitle = document.getElementById("feedback-title");
+      const feedbackDetail = document.getElementById("feedback-detail");
+
+      const refs = {
+        deviceId: document.getElementById("deviceId"),
+        payload: document.getElementById("payload"),
+        vstatus: document.getElementById("vstatus"),
+        intervalMs: document.getElementById("intervalMs"),
+        faultCode: document.getElementById("faultCode"),
+        durationMs: document.getElementById("durationMs"),
+        faultErrorNo: document.getElementById("faultErrorNo"),
+        faultErrorMsg: document.getElementById("faultErrorMsg"),
+        directConfigId: document.getElementById("directConfigId"),
+        directValue: document.getElementById("directValue"),
+        errorNo: document.getElementById("errorNo"),
+        errorType: document.getElementById("errorType"),
+        errorMsg: document.getElementById("errorMsg"),
+        timeRequestReason: document.getElementById("timeRequestReason"),
+      };
+
+      // ========== 动态字段管理 ==========
+
+      function createFieldRow(containerId, name, value) {
+        const row = document.createElement('div')
+        row.className = 'field-row'
+        row.innerHTML = `
+          <input class="field-name" value="${name}" placeholder="字段名" style="flex:1;min-width:80px" />
+          <input class="field-value" value="${value}" placeholder="值" style="flex:1;min-width:80px" />
+          <button class="del-field secondary">×</button>
+        `
+        row.querySelector('.del-field').onclick = () => { row.remove() }
+        document.getElementById(containerId).appendChild(row)
+      }
+
+      function getFields(containerId) {
+        const rows = document.getElementById(containerId).querySelectorAll('.field-row')
+        const obj = {}
+        rows.forEach(r => {
+          const name = r.querySelector('.field-name').value.trim()
+          const value = r.querySelector('.field-value').value.trim()
+          if (name) obj[name] = isNaN(Number(value)) ? value : Number(value)
+        })
+        return obj
+      }
+
+      // 初始化传感器默认字段
+      const sensorContainer = document.getElementById('sensorFields')
+      ;[['temp','26.5'],['flow','18.6'],['pressurre','12.4']].forEach(([n,v]) => createFieldRow('sensorFields', n, v))
+      document.getElementById('addSensorField').onclick = () => createFieldRow('sensorFields', '', '')
+
+      // 初始化行为默认字段
+      const behaviorContainer = document.getElementById('behaviorFields')
+      ;[['text_field','水泵正常运行']].forEach(([n,v]) => createFieldRow('behaviorFields', n, v))
+      document.getElementById('addBehaviorField').onclick = () => createFieldRow('behaviorFields', '', '')
+
+      let feedbackTimer = null;
+
+      function log(title, data) {
+        const time = new Date().toLocaleTimeString();
+        output.textContent =
+          `[${time}] ${title}\n${typeof data === "string" ? data : JSON.stringify(data, null, 2)}\n\n` +
+          output.textContent;
+      }
+
+      function setFeedback(state, title, detail, persist = false) {
+        feedbackBanner.className = `feedback-banner ${state}`;
+        feedbackTitle.textContent = title;
+        feedbackDetail.textContent = detail;
+
+        if (feedbackTimer) {
+          clearTimeout(feedbackTimer);
+          feedbackTimer = null;
+        }
+
+        if (!persist && (state === "success" || state === "error")) {
+          feedbackTimer = setTimeout(() => {
+            setFeedback("idle", "控制台已就绪", "可以继续发下一条测试消息。", true);
+          }, 2200);
+        }
+      }
+
+      function setStatusChip(text, state) {
+        statusChip.textContent = text;
+        statusChip.className = `status-chip ${state}`;
+      }
+
+      function resetButtonState(button, originalText) {
+        button.disabled = false;
+        button.classList.remove("is-loading", "is-success", "is-error");
+        button.textContent = originalText;
+      }
+
+      function flashButtonState(button, type, text, originalText) {
+        button.classList.remove("is-loading");
+        button.classList.add(type === "success" ? "is-success" : "is-error");
+        button.textContent = text;
+        window.setTimeout(() => resetButtonState(button, originalText), 1400);
+      }
+
+      function parsePayload() {
+        const raw = refs.payload.value.trim();
+        if (!raw) return undefined;
+        return JSON.parse(raw);
+      }
+
+      async function request(url, options = {}) {
+        const response = await fetch(url, {
+          headers: { "Content-Type": "application/json" },
+          ...options,
+        });
+        const data = await response.json();
+        if (!response.ok || data.status !== 0) {
+          throw new Error(data.message || `Request failed: ${response.status}`);
+        }
+        return data;
+      }
+
+      async function post(url, body) {
+        return request(url, {
+          method: "POST",
+          body: JSON.stringify(body ?? {}),
+        });
+      }
+
+      async function refreshStatus() {
+        try {
+          const result = await request("/api/status");
+          const status = result.data;
+          setStatusChip(
+            status.mqttConnected
+              ? `MQTT 已连接 · 自动心跳 ${status.autoHeartbeat.enabled ? "开启" : "关闭"}`
+              : "MQTT 未连接",
+            status.mqttConnected ? "online" : "offline"
+          );
+          log("状态刷新成功", result);
+        } catch (error) {
+          setStatusChip("状态刷新失败", "offline");
+          log("状态刷新失败", error.message || String(error));
+        }
+      }
+
+      async function refreshReceivedData() {
+        try {
+          const [directRes, timeRes] = await Promise.all([
+            request("/api/received/direct"),
+            request("/api/received/update-time"),
+          ]);
+
+          const directData = directRes.data?.data;
+          const timeData = timeRes.data?.data;
+
+          document.getElementById("receivedDirect").textContent =
+            directData ? JSON.stringify(directData, null, 2) : "暂无";
+          document.getElementById("receivedUpdateTime").textContent =
+            timeData ? JSON.stringify(timeData, null, 2) : "暂无";
+        } catch (error) {
+          log("刷新接收消息失败", error.message || String(error));
+        }
+      }
+
+      async function sendAction(title, url, bodyBuilder, button) {
+        const originalText = button.dataset.label || button.textContent.trim();
+        button.dataset.label = originalText;
+        button.disabled = true;
+        button.classList.remove("is-success", "is-error");
+        button.classList.add("is-loading");
+        button.textContent = "发送中...";
+        setFeedback("pending", `${title}进行中`, "请求已经发出，正在等待接口响应。", true);
+        log(`${title}已发出`, "请求已经提交，等待服务器返回结果。");
+
+        try {
+          const result = await post(url, bodyBuilder());
+          log(title, result);
+          flashButtonState(button, "success", "已成功", originalText);
+          setFeedback("success", `${title}成功`, result.message || "接口已完成响应。");
+          await refreshStatus();
+        } catch (error) {
+          const message = error.message || String(error);
+          log(`${title}失败`, message);
+          flashButtonState(button, "error", "失败", originalText);
+          setFeedback("error", `${title}失败`, message);
+        }
+      }
+
+      async function loadFaultCodes() {
+        try {
+          const result = await request("/api/preset/fault-codes");
+          const codes = result.data;
+          refs.faultCode.innerHTML = Object.entries(codes)
+            .map(([value, label]) => `<option value="${value}">${value} - ${label}</option>`)
+            .join("");
+        } catch (error) {
+          log("加载故障码失败", error.message || String(error));
+        }
+      }
+
+      // ========== 事件绑定 ==========
+
+      document.getElementById("refreshStatus").addEventListener("click", refreshStatus);
+      document.getElementById("refreshReceived").addEventListener("click", refreshReceivedData);
+
+      document.getElementById("sendHeartbeat").addEventListener("click", (event) =>
+        sendAction("发送心跳", "/api/heartbeat/send", () => ({
+          deviceId: refs.deviceId.value.trim(),
+          payload: parsePayload(),
+        }), event.currentTarget)
+      );
+
+      document.getElementById("startAutoHeartbeat").addEventListener("click", (event) =>
+        sendAction("开始自动心跳", "/api/heartbeat/auto/start", () => ({
+          deviceId: refs.deviceId.value.trim(),
+          vstatus: Number(refs.vstatus.value),
+          intervalMs: Number(refs.intervalMs.value),
+        }), event.currentTarget)
+      );
+
+      document.getElementById("stopAutoHeartbeat").addEventListener("click", (event) =>
+        sendAction("停止自动心跳", "/api/heartbeat/auto/stop", () => ({}), event.currentTarget)
+      );
+
+      document.getElementById("updateVstatus").addEventListener("click", (event) =>
+        sendAction("更新 VStatus", "/api/heartbeat/auto/vstatus", () => ({
+          vstatus: Number(refs.vstatus.value),
+        }), event.currentTarget)
+      );
+
+      document.getElementById("updateInterval").addEventListener("click", (event) =>
+        sendAction("更新间隔", "/api/heartbeat/auto/interval", () => ({
+          intervalMs: Number(refs.intervalMs.value),
+        }), event.currentTarget)
+      );
+
+      document.getElementById("sendSensor").addEventListener("click", (event) =>
+        sendAction("传感器", "/api/sensor/send", () => ({
+          deviceId: refs.deviceId.value.trim(),
+          payload: getFields('sensorFields'),
+        }), event.currentTarget)
+      );
+
+      document.getElementById("sendBehavior").addEventListener("click", (event) =>
+        sendAction("行为", "/api/behavior/send", () => ({
+          deviceId: refs.deviceId.value.trim(),
+          payload: getFields('behaviorFields'),
+        }), event.currentTarget)
+      );
+
+      document.getElementById("sendError").addEventListener("click", (event) =>
+        sendAction("错误", "/api/error/send", () => ({
+          deviceId: refs.deviceId.value.trim(),
+          payload: {
+            e_no: refs.errorNo.value.trim(),
+            type: refs.errorType.value,
+            e_msg: refs.errorMsg.value.trim(),
+          },
+        }), event.currentTarget)
+      );
+
+      document.getElementById("sendTimeRequest").addEventListener("click", (event) =>
+        sendAction("时间同步请求", "/api/time-request/send", () => ({
+          deviceId: refs.deviceId.value.trim(),
+          payload: {
+            reason: refs.timeRequestReason.value.trim(),
+          },
+        }), event.currentTarget)
+      );
+
+      document.getElementById("sendDirectReport").addEventListener("click", (event) =>
+        sendAction("指令上报", "/api/direct/report", () => ({
+          deviceId: refs.deviceId.value.trim(),
+          payload: {
+            config_id: Number(refs.directConfigId.value),
+            value: refs.directValue.value.trim(),
+          },
+        }), event.currentTarget)
+      );
+
+      document.getElementById("runFaultScenario").addEventListener("click", (event) =>
+        sendAction("执行故障场景", "/api/scenario/fault", () => ({
+          deviceId: refs.deviceId.value.trim(),
+          code: Number(refs.faultCode.value),
+          durationMs: Number(refs.durationMs.value),
+          e_no: refs.faultErrorNo.value.trim(),
+          e_msg: refs.faultErrorMsg.value.trim(),
+        }), event.currentTarget)
+      );
+
+      // ========== 初始化 ==========
+      loadFaultCodes();
+      refreshStatus();
+    </script>
+  </body>
+</html>

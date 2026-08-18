@@ -8,3 +8,4 @@ frontend/.env
 Thumbs.db
 .vscode/
 .worktrees/
+mqttTest/node_modules

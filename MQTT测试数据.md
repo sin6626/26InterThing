@@ -214,9 +214,9 @@ Topic：`device/direct`
 | `7` | 水泵开关 | `pump` | `on` / `off` |
 | `9` | 温度下限 | `temperatureLower` | 数值 |
 | `10` | 温度上限 | `temperatureUpper` | 数值 |
-| `11` | 流量下限 | `flowLow` | 数值 |
+| `11` | 流量下限 | `flowLower` | 数值 |
 | `12` | 流量上限 | `flowUpper` | 数值 |
-| `13` | 压力下限 | `pressuerLow` | 数值；当前库里拼写就是 `pressuerLow` |
+| `13` | 压力下限 | `pressuerLower` | 数值；当前库里拼写就是 `pressuerLower` |
 | `15` | 压力上限 | `pressureUpper` | 数值 |
 
 快速测试：

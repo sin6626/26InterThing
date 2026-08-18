@@ -1,0 +1,17 @@
+serverAddr = "38.95.74.213"
+serverPort = 7100
+loginFailExit = true
+
+log.to = "./frpc.log"
+log.level = "info"
+log.maxDays = 3
+
+auth.method = "token"
+auth.token = "(FLN20060503@@@)"
+
+[[proxies]]
+name = "mqtt_remote"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 1883
+remotePort = 6183
