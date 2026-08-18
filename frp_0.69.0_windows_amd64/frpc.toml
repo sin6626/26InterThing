@@ -15,3 +15,9 @@ type = "tcp"
 localIP = "127.0.0.1"
 localPort = 1883
 remotePort = 6183
+[[proxies]]
+name = "mqtt_remote2"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 3200
+remotePort = 6001
