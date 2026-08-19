@@ -65,7 +65,7 @@ const resolveMinuteLabelFromPayload = (rawData) => {
 
 // 实时卡片按当前选中设备读取最新一条数据。
 const fetchRealtime = async () => {
-  const dNo = switchStore.value ? selectedDeviceNo.value || undefined : undefined
+  const dNo = selectedDeviceNo.value || undefined
   const res = await getSensorDataRealTime(tablePrefix, dNo)
   sensorData.value = res.data || { values: {}, metadata: [], media: null }
 }
@@ -89,7 +89,7 @@ const updateSensorData = (rawData) => {
 
 // 图表初始化仍然依赖 HTTP 拉完整窗口，WebSocket 只做增量更新。
 const fetchChartData = async () => {
-  const dNo = switchStore.value ? selectedDeviceNo.value || undefined : undefined
+  const dNo = selectedDeviceNo.value || undefined
   const res = await getEchartsSensorByQuery(tablePrefix, {
     d_no: dNo,
     limit: chartPointLimit.value,
@@ -158,7 +158,6 @@ watch([chartType, chartPointLimit], async () => {
 })
 
 watch(selectedDeviceNo, async () => {
-  if (!switchStore.value) return
   await loadAll()
 })
 
@@ -181,7 +180,6 @@ onMounted(async () => {
   // 只消费当前选中设备的实时消息，避免多设备数据串图。
   stopWsListen = onRealtimeMessage('behavior_realtime', (payload) => {
     if (
-      switchStore.value &&
       selectedDeviceNo.value &&
       String(payload?.d_no ?? payload?.编号) !== String(selectedDeviceNo.value)
     ) {

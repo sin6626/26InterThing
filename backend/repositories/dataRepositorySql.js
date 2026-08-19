@@ -1,9 +1,9 @@
 // 实时页只取最新一条记录，避免把历史数据拉回应用层再筛选。
-const buildLatestRealtimeRecordSql = (tableprefix) => {
+const buildLatestRealtimeRecordSql = (tableprefix, hasDeviceFilter = true) => {
   return `
     SELECT *
     FROM ${tableprefix}_data
-    WHERE d_no = ?
+    ${hasDeviceFilter ? "WHERE d_no = ?" : ""}
     ORDER BY c_time DESC
     LIMIT 1
   `
@@ -12,7 +12,7 @@ const buildLatestRealtimeRecordSql = (tableprefix) => {
 // 历史分页查询与 count 查询共用同一套 where 条件生成规则。
 const buildCountPastRowsSql = (tableprefix, hasDeviceFilter, timeSql) => {
   return `select count(*) as total from ${tableprefix}_data where
-    ${hasDeviceFilter ? "d_no = ?" : "d_no = '202111' "}
+    ${hasDeviceFilter ? "d_no = ?" : "1=1"}
     ${timeSql}`
 }
 

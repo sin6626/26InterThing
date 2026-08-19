@@ -31,10 +31,11 @@ const getAllFieldMapper = (tableprefix) => {
   return query(sql)
 }
 
-// 实时页只关心某台设备最近的一条采集记录。
+// 实时页只关心某台设备最近的一条采集记录（未指定设备时取全表最新一条）。
 const getLatestRealtimeRecord = (tableprefix, dNo) => {
-  const sql = buildLatestRealtimeRecordSql(tableprefix)
-  return query(sql, [dNo])
+  const hasDeviceFilter = Boolean(dNo)
+  const sql = buildLatestRealtimeRecordSql(tableprefix, hasDeviceFilter)
+  return query(sql, hasDeviceFilter ? [dNo] : [])
 }
 
 // 媒体资源单独存放在设备媒体表，优先取最新启用的一条。

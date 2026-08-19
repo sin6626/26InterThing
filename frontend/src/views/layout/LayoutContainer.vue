@@ -213,8 +213,7 @@ onBeforeUnmount(() => {
       <el-header>
         <div class="device-status-bar">
           <span class="status-label">设备状态:</span>
-          <div class="status-list" v-if="switchStore.value">
-            <!-- 多设备模式：显示所有设备 -->
+          <div class="status-list">
             <div
               v-for="(status, dNo) in deviceStatusMap"
               :key="dNo"
@@ -237,24 +236,6 @@ onBeforeUnmount(() => {
             <span v-if="Object.keys(deviceStatusMap).length === 0" class="no-devices">
               暂无设备
             </span>
-          </div>
-          <div class="status-list" v-else>
-            <!-- 单设备模式：只显示设备1 -->
-            <div class="status-item">
-              <span
-                class="status-dot"
-                :class="statusClass(deviceStatusMap['202111'])"
-              ></span>
-              <span class="device-no">202111</span>
-              <el-tag
-                v-if="deviceStatusMap['202111']?.control"
-                size="small"
-                :type="controlTagType(deviceStatusMap['202111']?.control)"
-                style="margin-left: 4px; font-size: 11px;"
-              >
-                {{ controlTagText(deviceStatusMap['202111']?.control) }}
-              </el-tag>
-            </div>
           </div>
         </div>
         <div v-if="false" class="switch_b">

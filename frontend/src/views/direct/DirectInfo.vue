@@ -86,7 +86,11 @@ const changeDeviceHandle = async (data) => {
 
 // 水循环自动运行启停与复位
 const handleStartWaterControl = async () => {
-  const dNo = d_noValue.value || options.value[0]?.value || '202111'
+  const dNo = d_noValue.value || options.value[0]?.value || ''
+  if (!dNo) {
+    ElMessage.warning('未检测到有效设备编号')
+    return
+  }
   actionLoading.value = true
   try {
     const res = await startWaterControl(dNo)
@@ -100,7 +104,11 @@ const handleStartWaterControl = async () => {
 }
 
 const handleStopWaterControl = async () => {
-  const dNo = d_noValue.value || options.value[0]?.value || '202111'
+  const dNo = d_noValue.value || options.value[0]?.value || ''
+  if (!dNo) {
+    ElMessage.warning('未检测到有效设备编号')
+    return
+  }
   actionLoading.value = true
   try {
     const res = await stopWaterControl(dNo)
@@ -114,7 +122,11 @@ const handleStopWaterControl = async () => {
 }
 
 const handleResetWaterControl = async () => {
-  const dNo = d_noValue.value || options.value[0]?.value || '202111'
+  const dNo = d_noValue.value || options.value[0]?.value || ''
+  if (!dNo) {
+    ElMessage.warning('未检测到有效设备编号')
+    return
+  }
   actionLoading.value = true
   try {
     const res = await resetWaterControlFault(dNo)

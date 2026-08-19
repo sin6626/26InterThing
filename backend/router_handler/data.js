@@ -5,7 +5,7 @@ const { recognizeSensorRows } = require("../services/recognitionService")
 exports.realtime = async (req, res) => {
   try {
     const tableprefix = req.params.tableprefix
-    const d_no = req.query.d_no || "202111"
+    const d_no = req.query.d_no ? String(req.query.d_no).trim() : null
 
     const result = await dataService.getRealtimeData(tableprefix, d_no)
     res.send(result)
@@ -20,7 +20,7 @@ exports.sensorChart = async (req, res) => {
   try {
     const tableprefix = req.params.tableprefix
     const result = await dataService.getSensorChartData(tableprefix, {
-      dNo: req.query.d_no || "202111",
+      dNo: req.query.d_no ? String(req.query.d_no).trim() : null,
       endTime: req.query.endTime,
       limit: Math.max(
         10,

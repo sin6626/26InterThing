@@ -11,18 +11,21 @@ const getRealtimeData = async (tableprefix, dNo) => {
     dataRepository.getLatestRealtimeRecord(tableprefix, dNo),
   ])
 
+  const latestData = realtimeRows[0] || null
+  const targetDNo = dNo || (latestData ? latestData.d_no : null)
+
   // 某些设备可能带媒体表，但不是所有部署环境都有这张表，所以这里做容错。
   let media = null
-  try {
-    const mediaRows = await dataRepository.getLatestMedia(dNo)
-    media = mediaRows && mediaRows.length > 0 ? mediaRows[0] : null
-  } catch (error) {
-    if (error.code !== "ER_NO_SUCH_TABLE") {
-      throw error
+  if (targetDNo) {
+    try {
+      const mediaRows = await dataRepository.getLatestMedia(targetDNo)
+      media = mediaRows && mediaRows.length > 0 ? mediaRows[0] : null
+    } catch (error) {
+      if (error.code !== "ER_NO_SUCH_TABLE") {
+        throw error
+      }
     }
   }
-
-  const latestData = realtimeRows[0] || null
 
   return {
     status: 0,
@@ -58,13 +61,21 @@ const getSensorChartData = async (tableprefix, {
     .join(", ")
 
   const { params: timeParams, timeSql } = buildTimeSql(startTime, endTime)
+  const hasDeviceFilter = Boolean(dNo)
   const sql = buildSensorChartSql({
     tableprefix,
     fieldAggSql,
     timeSql,
+    hasDeviceFilter,
   })
 
-  const rows = await dataRepository.getChartRows(sql, [dNo, ...timeParams, limit])
+  const queryParams = []
+  if (hasDeviceFilter) {
+    queryParams.push(dNo)
+  }
+  queryParams.push(...timeParams, limit)
+
+  const rows = await dataRepository.getChartRows(sql, queryParams)
 
   return {
     status: 0,

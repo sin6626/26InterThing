@@ -35,3 +35,15 @@ test('buildSensorChartSql keeps time condition and does not select online column
   assert.match(sql, /and\s+c_time\s*>=\s*\?\s+and\s+c_time\s*<=\s*\?/i)
   assert.doesNotMatch(sql, /\bonline\b\s*(,|\n|\r)/i)
 })
+
+test('buildSensorChartSql supports querying without device filter', () => {
+  const sql = buildSensorChartSql({
+    tableprefix: 't_sensor',
+    fieldAggSql: 'round(avg(field1), 2) as field1',
+    timeSql: '',
+    hasDeviceFilter: false,
+  })
+
+  assert.match(sql, /where\s+1=1/i)
+  assert.doesNotMatch(sql, /d_no\s*=/i)
+})

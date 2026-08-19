@@ -69,7 +69,7 @@ const resolveMinuteLabelFromPayload = (rawData) => {
 
 // 实时卡片按当前设备读取最新一条数据。
 const fetchRealtime = async () => {
-  const dNo = switchStore.value ? selectedDeviceNo.value || undefined : undefined
+  const dNo = selectedDeviceNo.value || undefined
   const res = await getSensorDataRealTime(tablePrefix, dNo)
   sensorData.value = res.data || { values: {}, metadata: [], media: null }
 }
@@ -94,7 +94,7 @@ const updateSensorData = (rawData) => {
 
 // 图表完整窗口先通过 HTTP 获取。
 const fetchChartData = async () => {
-  const dNo = switchStore.value ? selectedDeviceNo.value || undefined : undefined
+  const dNo = selectedDeviceNo.value || undefined
   const res = await getEchartsSensorByQuery(tablePrefix, {
     d_no: dNo,
     limit: chartPointLimit.value,
@@ -169,7 +169,6 @@ watch([chartType, chartPointLimit], async () => {
 
 
 watch(selectedDeviceNo, async () => {
-  if (!switchStore.value) return
   await loadAll()
 })
 
@@ -193,7 +192,6 @@ onMounted(async () => {
   // 只消费当前选中设备的实时消息，避免多设备数据串图。
   stopWsListen = onRealtimeMessage('sensor_realtime', (payload) => {
     if (
-      switchStore.value &&
       selectedDeviceNo.value &&
       String(payload?.d_no ?? payload?.编号) !== String(selectedDeviceNo.value)
     ) {

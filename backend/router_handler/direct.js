@@ -79,7 +79,8 @@ exports.types = async (req, res) => {
 // 水循环自动运行启动
 exports.startWaterControl = async (req, res) => {
   try {
-    const dNo = req.body?.d_no || "202111"
+    const dNo = String(req.body?.d_no || "").trim()
+    if (!dNo) return res.cc("设备编号不能为空")
     const result = await directService.startWaterControl(dNo)
     res.send({
       status: 0,
@@ -93,7 +94,8 @@ exports.startWaterControl = async (req, res) => {
 // 水循环停止（进入冷却延时）
 exports.stopWaterControl = async (req, res) => {
   try {
-    const dNo = req.body?.d_no || "202111"
+    const dNo = String(req.body?.d_no || "").trim()
+    if (!dNo) return res.cc("设备编号不能为空")
     const result = await directService.stopWaterControl(dNo)
     res.send({
       status: 0,
@@ -107,7 +109,8 @@ exports.stopWaterControl = async (req, res) => {
 // 水循环故障复位
 exports.resetWaterControlFault = async (req, res) => {
   try {
-    const dNo = req.body?.d_no || "202111"
+    const dNo = String(req.body?.d_no || "").trim()
+    if (!dNo) return res.cc("设备编号不能为空")
     const result = await directService.resetWaterControlFault(dNo)
     res.send({
       status: 0,
@@ -121,7 +124,8 @@ exports.resetWaterControlFault = async (req, res) => {
 // 获取水循环实时状态
 exports.getWaterControlStatus = async (req, res) => {
   try {
-    const dNo = req.params?.d_no || "202111"
+    const dNo = String(req.params?.d_no || "").trim()
+    if (!dNo) return res.cc("设备编号不能为空")
     const data = directService.getWaterControlStatus(dNo)
     res.send({
       status: 0,
