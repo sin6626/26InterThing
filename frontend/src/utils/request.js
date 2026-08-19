@@ -10,6 +10,14 @@ const request = axios.create({
 // 后端接口约定 status=1 代表业务失败，这里统一转成 rejected Promise。
 request.interceptors.response.use(
   response => {
+    console.log(JSON.stringify({
+      statusCode: response.status,
+      method: (response.config?.method || 'get').toUpperCase(),
+      url: response.config?.url,
+      params: response.config?.params || response.config?.data,
+      response: response.data
+    }, null, 2))
+
     if (response.data.status === 1) {
       if (!response.config?.silent) {
         ElMessage.error(response.data.message || '操作失败')

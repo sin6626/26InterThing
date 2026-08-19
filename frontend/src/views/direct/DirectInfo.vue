@@ -29,6 +29,7 @@ const defaultProps = {
 const globalTreeData = ref([])
 const deviceTreeData = ref([])
 const actionLoading = ref(false)
+const treeKey = ref(0)
 
 // 以某台设备为参照，同时拿到全局默认树和单设备覆盖树。
 const getList = async (no) => {
@@ -41,6 +42,7 @@ const getList = async (no) => {
   const res = await getDirectInfo(selectedNo)
   globalTreeData.value = res.data?.globalTree || []
   deviceTreeData.value = res.data?.deviceTree || []
+  treeKey.value++
 }
 
 // 切换设备后刷新页面上的树形指令。
@@ -207,6 +209,8 @@ onMounted(async () => {
 
     <h3>全局指令</h3>
     <el-tree
+      :key="`global-${treeKey}`"
+      node-key="id"
       :data="globalTreeData"
       :props="defaultProps"
       :expand-on-click-node="false"
@@ -295,6 +299,8 @@ onMounted(async () => {
         </div>
       </div>
       <el-tree
+        :key="`device-${treeKey}`"
+        node-key="id"
         :data="deviceTreeData"
         :props="defaultProps"
         :expand-on-click-node="false"

@@ -231,6 +231,16 @@ const getDirectTypes = async () => {
 
 const startWaterControl = async (dNo) => {
   const waterControlEngine = require("./waterControlEngine")
+  // 同步把数据库中 master (config_id=0) 的值置为 on
+  try {
+    const rootConfig = await directRepository.getDirectConfigById(0)
+    if (rootConfig && rootConfig.topic === "master") {
+      await directRepository.upsertGlobalDirect(0, "on")
+      if (dNo) {
+        await directRepository.updateDeviceDirectValue(0, "on", dNo)
+      }
+    }
+  } catch {}
   return waterControlEngine.startAuto(dNo)
 }
 
