@@ -70,12 +70,16 @@ export function useDeviceStatus() {
     return deviceStatusMap.value[dNo]?.status === 'online'
   }
 
-  // 实时消息只覆盖发生变化的那台设备。
+  // 实时消息只覆盖发生变化的那台设备（仅当属于系统已登记设备时）。
   const startListening = () => {
     if (stopWsListen) return
 
     stopWsListen = onRealtimeMessage('device_status', (payload) => {
-      if (payload && payload.d_no) {
+      if (
+        payload &&
+        payload.d_no &&
+        Object.prototype.hasOwnProperty.call(deviceStatusMap.value, payload.d_no)
+      ) {
         deviceStatusMap.value = {
           ...deviceStatusMap.value,
           [payload.d_no]: normalizeStatusInfo(payload),

@@ -13,7 +13,7 @@ const dayjs = require("dayjs") // 导入dayjs
 // 导入处理设备状态模块
 const heartbeat = require("../mqtt/mqtt_hander/heartbeat")  // 新增
 
-// 返回实际设备列表结合在线状态与控制状态。
+// 返回实际设备列表结合在线状态与控制状态（严格以数据库已登记设备为准）。
 exports.deviceStatus = (req, res) => {
   const sql = `select number from t_device where number is not null and number <> '' order by cast(number as unsigned), number`
   db.query(sql, (err, results) => {
@@ -27,7 +27,7 @@ exports.deviceStatus = (req, res) => {
 
     const fullStatusMap = {}
 
-    // 先把数据库中登记的所有设备初始化（离线或取实时在线状态）
+    // 只展示数据库中已登记的设备
     results.forEach((row) => {
       const num = String(row.number).trim()
       if (!num) return
@@ -42,13 +42,6 @@ exports.deviceStatus = (req, res) => {
           updated_at: null,
           control: waterControlEngine ? waterControlEngine.getDeviceControlStatus(num) : null,
         }
-      }
-    })
-
-    // 如果还有通过 MQTT 活跃但未登记在 t_device 的设备，也并入展示
-    Object.entries(statusMap).forEach(([dNo, info]) => {
-      if (!fullStatusMap[dNo]) {
-        fullStatusMap[dNo] = info
       }
     })
 
