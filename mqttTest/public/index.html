@@ -238,14 +238,12 @@
 
           <label style="flex-direction:row; align-items:center; gap:6px; margin:0;">
             <span style="font-size:12px; white-space:nowrap;">模拟设备号:</span>
-            <select id="deviceSelect" style="width: 140px; padding: 6px 10px;">
-              <option value="202111">202111 (设备1)</option>
-              <option value="202112">202112 (设备2)</option>
-              <option value="e46488d793284429">e46488d7 (网关)</option>
+            <select id="deviceSelect" style="width: 220px; padding: 6px 10px;">
+              <option value="e46488d793284429" selected>e46488d793284429 (水循环装置)</option>
               <option value="custom">自定义设备号</option>
             </select>
           </label>
-          <input id="customDeviceInput" placeholder="输入设备号" style="width: 120px; display: none; padding: 6px 10px;" />
+          <input id="customDeviceInput" placeholder="输入设备号" style="width: 140px; display: none; padding: 6px 10px;" />
 
           <button class="secondary" id="toggleBrokerBtn">⚙️ Broker 配置</button>
         </div>
@@ -262,7 +260,7 @@
           <label>Port<input id="brokerPort" type="number" value="1883" /></label>
           <label>Username<input id="brokerUser" value="sin" /></label>
           <label>Password<input id="brokerPass" value="1234" /></label>
-          <label>ClientId<input id="brokerClientId" value="device_simulator_202111" /></label>
+          <label>ClientId<input id="brokerClientId" value="device_simulator_e46488d7" /></label>
           <div style="display:flex; align-items:flex-end;">
             <button id="saveBrokerBtn" style="height:36px; width:100%;">保存并重连</button>
           </div>
@@ -512,7 +510,7 @@
       const feedbackText = document.getElementById('feedback-text');
       const feedbackTime = document.getElementById('feedback-time');
 
-      let currentDeviceId = '202111';
+      let currentDeviceId = 'e46488d793284429';
       let autoSensorRunning = false;
       let autoHeartbeatRunning = false;
 

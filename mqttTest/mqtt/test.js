@@ -23,14 +23,14 @@ const parseNumberOr = (value, fallback) => {
   return Number.isFinite(num) ? num : fallback
 }
 
-const normalizeDeviceId = (deviceId) => String(deviceId || '202111').trim() || '202111'
+const normalizeDeviceId = (deviceId) => String(deviceId || 'e46488d793284429').trim() || 'e46488d793284429'
 
 // ========== 全局状态 ==========
 
 const state = {
   connected: false,
   mqttOptions: { ...mqttOptions },
-  deviceId: '202111',
+  deviceId: 'e46488d793284429',
   physics: {
     temp_out: 28.5,
     temp_in: 25.0,
