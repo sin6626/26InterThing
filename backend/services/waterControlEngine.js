@@ -206,6 +206,8 @@ const triggerFault = async (dNo, reason) => {
     await executeDeviceAction(dNo, "pump", "off", `故障保护: ${reason}`)
   }
 
+  const nowTime = new Date().toLocaleString()
+
   // 记录错误信息到数据库
   if (typeof configLoaderDep !== "function") {
     try {
@@ -217,7 +219,7 @@ const triggerFault = async (dNo, reason) => {
     }
   }
 
-  // 广播告警
+  // 广播告警与实时错误
   let broadcast = broadcastDep
   if (!broadcast) {
     try {
@@ -228,12 +230,20 @@ const triggerFault = async (dNo, reason) => {
   }
 
   if (typeof broadcast === "function") {
+    broadcast("error_realtime", {
+      d_no: dNo,
+      e_no: "ERR_SAFE",
+      type: "7",
+      e_msg: `安全保护: ${reason}`,
+      c_time: nowTime,
+    })
+
     broadcast("alarm_realtime", {
       d_no: dNo,
       code: 7,
       level: "error",
       text: `安全保护: ${reason}`,
-      updated_at: new Date().toLocaleString(),
+      updated_at: nowTime,
     })
   }
 
@@ -289,7 +299,7 @@ const checkHeaterSafety = async (dNo) => {
   return { safe: true }
 }
 
-// 接收传感器数据并执行闭环控制
+// 接收传感器数据并执行闭环控制与全局安全守卫
 const onSensorData = async (dNo, rawData) => {
   if (!rawData || !dNo) return
   const state = getOrCreateDeviceState(dNo)
@@ -298,6 +308,13 @@ const onSensorData = async (dNo, rawData) => {
   const tempOut = parseFloat(rawData.temp_out ?? rawData.field2)
   const flowRate = parseFloat(rawData.flow_rate ?? rawData.field5)
   const pressure = parseFloat(rawData.pressure ?? rawData.field4)
+
+  if (rawData.water_Y2 !== undefined) {
+    state.pumpState = Number(rawData.water_Y2) === 1 ? "on" : "off"
+  }
+  if (rawData.heat_Y1 !== undefined) {
+    state.heaterState = Number(rawData.heat_Y1) === 1 ? "on" : "off"
+  }
 
   state.lastSensors = {
     temp_in: Number.isFinite(tempIn) ? tempIn : null,
@@ -308,12 +325,78 @@ const onSensorData = async (dNo, rawData) => {
   }
   state.lastSensorTime = Date.now()
 
-  // 同步数据库中的控制模式
+  // 同步数据库中的控制模式与参数
   const { masterMode, params } = await loadDeviceControlConfig(dNo)
   state.mode = masterMode
 
-  // 如果处于停止或手动模式，不执行自动控温，只维护传感器数值
-  if (state.mode !== "auto" || state.fsmState === FSM_STATES.STOPPED || state.fsmState === FSM_STATES.FAULT) {
+  // 如果已经处于 FAULT 状态，更新传感器数值并广播最新状态后直接返回，防止重复触发
+  if (state.fsmState === FSM_STATES.FAULT) {
+    notifyStatusChange(dNo)
+    return
+  }
+
+  // ===== 全局第一道防线：超温安全守卫（全模式强制保护） =====
+  if (
+    (state.lastSensors.temp_in !== null && state.lastSensors.temp_in >= params.max_safe_temperature) ||
+    (state.lastSensors.temp_out !== null && state.lastSensors.temp_out >= params.max_safe_temperature)
+  ) {
+    const maxTemp = Math.max(state.lastSensors.temp_in || 0, state.lastSensors.temp_out || 0)
+    await triggerFault(dNo, `水温超限(${maxTemp.toFixed(1)}℃ >= ${params.max_safe_temperature}℃)`)
+    return
+  }
+
+  // ===== 全局第二道防线：超压安全守卫（全模式强制急停） =====
+  if (params.max_safe_pressure && state.lastSensors.pressure !== null && state.lastSensors.pressure >= params.max_safe_pressure) {
+    await triggerFault(dNo, `管路超压(${state.lastSensors.pressure.toFixed(1)}kPa >= ${params.max_safe_pressure}kPa)`)
+    return
+  }
+
+  // ===== 全局第三道防线：失流干烧安全守卫（加热开启时流量过低持续2秒） =====
+  const isHeaterActive = state.heaterState === "on" || Number(rawData.heat_Y1) === 1
+  if (isHeaterActive && state.lastSensors.flow_rate !== null && state.lastSensors.flow_rate < params.min_safe_flow) {
+    const now = Date.now()
+    if (!state.lowFlowStartTime) {
+      state.lowFlowStartTime = now
+    } else if (now - state.lowFlowStartTime >= params.low_flow_confirm_time * 1000) {
+      await triggerFault(dNo, `运行中流量过低(${state.lastSensors.flow_rate.toFixed(2)}L/min < ${params.min_safe_flow}L/min)`)
+      return
+    }
+  } else {
+    state.lowFlowStartTime = 0
+  }
+
+  // ===== 全局第四道防线：水泵已开但持续未建流检查 =====
+  const isPumpActive = state.pumpState === "on" || Number(rawData.water_Y2) === 1
+  if (isPumpActive && state.fsmState !== FSM_STATES.RUNNING && state.fsmState !== FSM_STATES.COOLING) {
+    if (state.lastSensors.flow_rate !== null && state.lastSensors.flow_rate < params.min_safe_flow) {
+      const now = Date.now()
+      if (!state.buildFlowStartTime) {
+        state.buildFlowStartTime = now
+        if (state.fsmState !== FSM_STATES.BUILDING_FLOW) {
+          state.fsmState = FSM_STATES.BUILDING_FLOW
+          state.fsmText = FSM_STATE_TEXT.BUILDING_FLOW
+          state.countdown = params.build_flow_timeout
+        }
+      } else if (now - state.buildFlowStartTime >= params.build_flow_timeout * 1000) {
+        state.buildFlowStartTime = 0
+        await triggerFault(dNo, `启动未建流(超过${params.build_flow_timeout}s未达到最低流量)`)
+        return
+      }
+    } else if (state.lastSensors.flow_rate !== null && state.lastSensors.flow_rate >= params.min_safe_flow) {
+      state.buildFlowStartTime = 0
+      if (state.fsmState === FSM_STATES.BUILDING_FLOW) {
+        state.fsmState = FSM_STATES.RUNNING
+        state.fsmText = FSM_STATE_TEXT.RUNNING
+        state.countdown = 0
+      }
+    }
+  } else {
+    state.buildFlowStartTime = 0
+  }
+
+  // 如果处于手动模式或已停止，执行完全局安全检查后直接广播并返回
+  if (state.mode !== "auto" || state.fsmState === FSM_STATES.STOPPED) {
+    notifyStatusChange(dNo)
     return
   }
 
@@ -321,51 +404,18 @@ const onSensorData = async (dNo, rawData) => {
   if (state.fsmState === FSM_STATES.BUILDING_FLOW) {
     // 正在建流阶段：检查流量是否达标
     if (state.lastSensors.flow_rate !== null && state.lastSensors.flow_rate >= params.min_safe_flow) {
-      if (params.max_safe_pressure && state.lastSensors.pressure !== null && state.lastSensors.pressure >= params.max_safe_pressure) {
-        await triggerFault(dNo, `建流超压(${state.lastSensors.pressure} >= ${params.max_safe_pressure} kPa)`)
-        return
-      }
       // 建流成功！切入正常运行
       state.fsmState = FSM_STATES.RUNNING
       state.fsmText = FSM_STATE_TEXT.RUNNING
       state.countdown = 0
       console.log(`[WaterControl] 设备 ${dNo} 建流成功，进入 RUNNING 自动运行状态`)
-      notifyStatusChange(dNo)
     }
+    notifyStatusChange(dNo)
     return
   }
 
   if (state.fsmState === FSM_STATES.RUNNING) {
-    // 1. 安全守卫（超温检查）
-    if (
-      (state.lastSensors.temp_in !== null && state.lastSensors.temp_in >= params.max_safe_temperature) ||
-      (state.lastSensors.temp_out !== null && state.lastSensors.temp_out >= params.max_safe_temperature)
-    ) {
-      const maxTemp = Math.max(state.lastSensors.temp_in || 0, state.lastSensors.temp_out || 0)
-      await triggerFault(dNo, `水温超限(${maxTemp.toFixed(1)}℃ >= ${params.max_safe_temperature}℃)`)
-      return
-    }
-
-    // 2. 安全守卫（超压检查）
-    if (params.max_safe_pressure && state.lastSensors.pressure !== null && state.lastSensors.pressure >= params.max_safe_pressure) {
-      await triggerFault(dNo, `管路超压(${state.lastSensors.pressure.toFixed(1)}kPa >= ${params.max_safe_pressure}kPa)`)
-      return
-    }
-
-    // 3. 安全守卫（运行中低流量防干烧）
-    if (state.lastSensors.flow_rate !== null && state.lastSensors.flow_rate < params.min_safe_flow) {
-      const now = Date.now()
-      if (!state.lowFlowStartTime) {
-        state.lowFlowStartTime = now
-      } else if (now - state.lowFlowStartTime >= params.low_flow_confirm_time * 1000) {
-        await triggerFault(dNo, `运行中流量过低(${state.lastSensors.flow_rate.toFixed(2)}L/min < ${params.min_safe_flow}L/min)`)
-        return
-      }
-    } else {
-      state.lowFlowStartTime = 0
-    }
-
-    // 4. 回差温度控制（以 temp_out 为控制基准）
+    // 回差温度控制（以 temp_out 为控制基准）
     if (state.lastSensors.temp_out !== null) {
       const currentTemp = state.lastSensors.temp_out
       const lowThreshold = params.target_temperature - params.temperature_hysteresis
@@ -375,16 +425,15 @@ const onSensorData = async (dNo, rawData) => {
         if (state.heaterState !== "on") {
           console.log(`[WaterControl] 设备 ${dNo} 水温(${currentTemp}℃) <= 下限(${lowThreshold}℃)，自动开启加热`)
           await executeDeviceAction(dNo, "heater", "on", "自动控温: 水温低于下限")
-          notifyStatusChange(dNo)
         }
       } else if (currentTemp >= highThreshold) {
         if (state.heaterState !== "off") {
           console.log(`[WaterControl] 设备 ${dNo} 水温(${currentTemp}℃) >= 目标(${highThreshold}℃)，自动关闭加热`)
           await executeDeviceAction(dNo, "heater", "off", "自动控温: 水温达到目标")
-          notifyStatusChange(dNo)
         }
       }
     }
+    notifyStatusChange(dNo)
     return
   }
 
@@ -395,8 +444,8 @@ const onSensorData = async (dNo, rawData) => {
       state.fsmState = FSM_STATES.STOPPED
       state.fsmText = FSM_STATE_TEXT.STOPPED
       state.countdown = 0
-      notifyStatusChange(dNo)
     }
+    notifyStatusChange(dNo)
   }
 }
 

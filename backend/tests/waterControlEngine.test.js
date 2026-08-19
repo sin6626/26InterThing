@@ -229,3 +229,37 @@ test("手动控制安全审查：流量不足或水泵未开时拒绝加热，�
   check = await waterControlEngine.checkHeaterSafety(dNo)
   assert.equal(check.safe, true)
 })
+
+test("全模式全局安全守卫：手动/已停止状态下收到超温、超压、干烧均能立即触发保护并广播错误流", async () => {
+  const broadcastLogs = []
+  waterControlEngine.__setBroadcastForTests((event, payload) => {
+    broadcastLogs.push({ event, payload })
+  })
+
+  const dNo = "TEST_GLOBAL_SAFE"
+  const state = waterControlEngine.getOrCreateDeviceState(dNo)
+  state.mode = "manual"
+  state.fsmState = FSM_STATES.STOPPED
+
+  // 1. 模拟收到超温数据
+  await waterControlEngine.onSensorData(dNo, {
+    temp_out: 46.5,
+    temp_in: 30.0,
+    flow_rate: 0.8,
+    pressure: 60.0,
+  })
+
+  assert.equal(state.fsmState, FSM_STATES.FAULT)
+  assert.match(state.faultReason, /水温超限/)
+
+  // 检查是否同时广播了 error_realtime, alarm_realtime 和 device_status
+  const events = broadcastLogs.map((b) => b.event)
+  assert.ok(events.includes("error_realtime"), "必须广播 error_realtime")
+  assert.ok(events.includes("alarm_realtime"), "必须广播 alarm_realtime")
+  assert.ok(events.includes("device_status"), "必须广播 device_status")
+
+  const statusMsg = broadcastLogs.find((b) => b.event === "device_status")
+  assert.ok(statusMsg.payload.control, "device_status payload 必须携带 control 属性")
+  assert.equal(statusMsg.payload.control.fsmState, FSM_STATES.FAULT)
+})
+

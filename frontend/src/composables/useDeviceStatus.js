@@ -41,6 +41,7 @@ export function useDeviceStatus() {
       level: raw.level || (raw.status === 'online' ? 'normal' : 'unknown'),
       text: raw.text || (raw.status === 'online' ? '正常' : '离线'),
       updated_at: raw.updated_at || null,
+      control: raw.control || null,
     }
   }
 
@@ -70,16 +71,12 @@ export function useDeviceStatus() {
     return deviceStatusMap.value[dNo]?.status === 'online'
   }
 
-  // 实时消息只覆盖发生变化的那台设备（仅当属于系统已登记设备时）。
+  // 实时消息覆盖发生变化的那台设备
   const startListening = () => {
     if (stopWsListen) return
 
     stopWsListen = onRealtimeMessage('device_status', (payload) => {
-      if (
-        payload &&
-        payload.d_no &&
-        Object.prototype.hasOwnProperty.call(deviceStatusMap.value, payload.d_no)
-      ) {
+      if (payload && payload.d_no) {
         deviceStatusMap.value = {
           ...deviceStatusMap.value,
           [payload.d_no]: normalizeStatusInfo(payload),

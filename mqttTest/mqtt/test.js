@@ -374,39 +374,38 @@ const runScenario = async (type, options = {}) => {
   const dNo = normalizeDeviceId(options.deviceId || state.deviceId)
 
   switch (type) {
-    // 1. 启动未建流：泵开但流量为0持续5秒
+    // 1. 启动未建流：水泵开但流量为0持续6秒
     case 'flow_timeout': {
       updatePhysics({ water_Y2: 1, heat_Y1: 0, flow_rate: 0.0, pressure: 20.0, temp_out: 28.0 })
-      // 连续发 5 包（每秒 1 包）流量为 0 的数据
-      for (let i = 0; i < 5; i++) {
-        await sendSensor({ deviceId: dNo, payload: { flow_rate: 0.0, water_Y2: 1, heat_Y1: 0 } })
+      for (let i = 0; i < 6; i++) {
+        await sendSensor({ deviceId: dNo, payload: { flow_rate: 0.0, water_Y2: 1, heat_Y1: 0, pressure: 20.0 } })
         await new Promise((r) => setTimeout(r, 1000))
       }
-      return { message: '已模拟【建流超时】场景（连续 5s 流量=0）' }
+      return { message: '已模拟【建流超时】场景（开泵流量=0持续6秒，已触发停泵报警）' }
     }
 
-    // 2. 运行中失流防干烧：加热开着但流量突降为 0.1
+    // 2. 运行中失流防干烧：加热开着但流量突降为 0.1 持续 4 秒
     case 'flow_loss': {
       updatePhysics({ water_Y2: 1, heat_Y1: 1, flow_rate: 0.1, pressure: 25.0, temp_out: 34.8 })
-      for (let i = 0; i < 3; i++) {
-        await sendSensor({ deviceId: dNo, payload: { flow_rate: 0.1, water_Y2: 1, heat_Y1: 1 } })
+      for (let i = 0; i < 4; i++) {
+        await sendSensor({ deviceId: dNo, payload: { flow_rate: 0.1, water_Y2: 1, heat_Y1: 1, pressure: 25.0 } })
         await new Promise((r) => setTimeout(r, 1000))
       }
-      return { message: '已模拟【失流干烧】场景（加热中流量突降为 0.1L/min 持续 3s）' }
+      return { message: '已模拟【失流干烧】场景（加热中流量0.1L/min持续4s，已触发切断加热）' }
     }
 
     // 3. 超温保护：出口水温飙升至 46.5℃
     case 'over_temp': {
       updatePhysics({ temp_out: 46.5, flow_rate: 0.8, pressure: 85.0, heat_Y1: 1, water_Y2: 1 })
-      await sendSensor({ deviceId: dNo, payload: { temp_out: 46.5, flow_rate: 0.8, heat_Y1: 1, water_Y2: 1 } })
-      return { message: '已模拟【超温告警】场景（temp_out = 46.5℃）' }
+      await sendSensor({ deviceId: dNo, payload: { temp_out: 46.5, flow_rate: 0.8, pressure: 85.0, heat_Y1: 1, water_Y2: 1 } })
+      return { message: '已模拟【超温告警】场景（temp_out = 46.5℃，已触发关加热保泵散热）' }
     }
 
     // 4. 超压急停：管路压力跳升至 160kPa
     case 'over_pressure': {
       updatePhysics({ pressure: 160.0, temp_out: 32.0, flow_rate: 0.8, heat_Y1: 1, water_Y2: 1 })
-      await sendSensor({ deviceId: dNo, payload: { pressure: 160.0, heat_Y1: 1, water_Y2: 1 } })
-      return { message: '已模拟【超压急停】场景（pressure = 160.0kPa）' }
+      await sendSensor({ deviceId: dNo, payload: { pressure: 160.0, temp_out: 32.0, flow_rate: 0.8, heat_Y1: 1, water_Y2: 1 } })
+      return { message: '已模拟【超压急停】场景（pressure = 160.0kPa，已触发双切断急停）' }
     }
 
     // 5. 传感器中断：停止上报 6s
@@ -420,7 +419,7 @@ const runScenario = async (type, options = {}) => {
     case 'offline': {
       stopAutoHeartbeat()
       await new Promise((r) => setTimeout(r, 7000))
-      return { message: '已模拟【断网离线】场景（暂停心跳 7s）' }
+      return { message: '已模拟【断网离线】场景（暂停心跳 7s，设备已切为离线）' }
     }
 
     // 7. 重新上线：发送心跳
