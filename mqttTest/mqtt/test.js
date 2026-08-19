@@ -123,6 +123,30 @@ const initMqttClient = () => {
         state.receivedDirectList.pop()
       }
       console.log(`[MQTT Sim][${now}] 收到指令:`, summary || rawStr)
+
+      // ========== 自动物理状态响应联动 ==========
+      if (isModbus && parsedData?.mb) {
+        const mb = String(parsedData.mb).toLowerCase()
+        if (mb.includes('010600010001')) {
+          updatePhysics({ water_Y2: 1, flow_rate: state.physics.flow_rate > 0 ? state.physics.flow_rate : 0.8, pressure: 85.0 })
+        } else if (mb.includes('010600010000')) {
+          updatePhysics({ water_Y2: 0, flow_rate: 0.0, pressure: 0.0 })
+        } else if (mb.includes('010600020001')) {
+          updatePhysics({ heat_Y1: 1 })
+        } else if (mb.includes('010600020000')) {
+          updatePhysics({ heat_Y1: 0 })
+        }
+      } else if (parsedData && parsedData.topic) {
+        const t = String(parsedData.topic).toLowerCase()
+        const v = String(parsedData.value).toLowerCase()
+        if (t === 'pump') {
+          if (v === 'on') updatePhysics({ water_Y2: 1, flow_rate: state.physics.flow_rate > 0 ? state.physics.flow_rate : 0.8, pressure: 85.0 })
+          else updatePhysics({ water_Y2: 0, flow_rate: 0.0, pressure: 0.0 })
+        } else if (t === 'heater') {
+          if (v === 'on') updatePhysics({ heat_Y1: 1 })
+          else updatePhysics({ heat_Y1: 0 })
+        }
+      }
     } else if (topic === 'device/updateTime') {
       state.lastReceivedUpdateTime = {
         time: now,
@@ -195,11 +219,20 @@ const buildWaterCycleSensorPayload = (payload = {}, jitter = false) => {
   const waterY2 = parseNumberOr(payload.water_Y2, p.water_Y2)
   const vstatus = parseNumberOr(payload.VStatus ?? payload.vstatus, p.vstatus)
 
-  // 微小自然波动
+  // 微小自然波动与动态升降温仿真
   if (jitter) {
+    if (waterY2 === 1) {
+      if (heatY1 === 1 && tempOut < 38.0) {
+        tempOut = Number((tempOut + 0.3).toFixed(2))
+        p.temp_out = tempOut
+      } else if (heatY1 === 0 && tempOut > 26.0) {
+        tempOut = Number((tempOut - 0.2).toFixed(2))
+        p.temp_out = tempOut
+      }
+    }
     const randomJitter = (range) => Number(((Math.random() - 0.5) * range).toFixed(2))
-    tempOut = Number((tempOut + randomJitter(0.2)).toFixed(2))
-    tempIn = Number((tempIn + randomJitter(0.15)).toFixed(2))
+    tempOut = Number((tempOut + randomJitter(0.08)).toFixed(2))
+    tempIn = Number((tempIn + randomJitter(0.08)).toFixed(2))
     if (flowRate > 0) flowRate = Number(Math.max(0, flowRate + randomJitter(0.04)).toFixed(2))
     if (pressure > 0) pressure = Number(Math.max(0, pressure + randomJitter(0.6)).toFixed(1))
   }
