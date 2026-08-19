@@ -46,6 +46,9 @@ const createTopicDispatcher = ({
 
     // 传感器数据：入库 + 推送给前端实时页 + 驱动水循环自动控制引擎。
     if (topic === "device/sensor") {
+      if (heartbeatHandler && typeof heartbeatHandler.handleHeartbeat === "function") {
+        heartbeatHandler.handleHeartbeat(deviceId, data)
+      }
       saveHandler.saveSensorData(topic, payload, (err) => {
         if (err) {
           console.error("传感器数据保存失败:", err.message)
@@ -65,6 +68,9 @@ const createTopicDispatcher = ({
 
     // 行为数据：入库 + 推送给前端行为实时页。
     if (topic === "device/behavior") {
+      if (heartbeatHandler && typeof heartbeatHandler.handleHeartbeat === "function") {
+        heartbeatHandler.handleHeartbeat(deviceId, data)
+      }
       saveHandler.savebehaviorData(topic, payload, (err) => {
         if (err) {
           console.error("行为数据保存失败:", err.message)

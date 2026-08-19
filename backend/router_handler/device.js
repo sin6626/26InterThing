@@ -13,13 +13,50 @@ const dayjs = require("dayjs") // 导入dayjs
 // 导入处理设备状态模块
 const heartbeat = require("../mqtt/mqtt_hander/heartbeat")  // 新增
 
-// 返回 heartbeat 模块维护的在线状态缓存。
+// 返回实际设备列表结合在线状态与控制状态。
 exports.deviceStatus = (req, res) => {
-  const statusMap = heartbeat.getAllDeviceStatus()
-  res.send({
-    status: 0,
-    message: '查询成功',
-    data: statusMap,
+  const sql = `select number from t_device where number is not null and number <> '' order by cast(number as unsigned), number`
+  db.query(sql, (err, results) => {
+    if (err) return res.cc(err)
+
+    const statusMap = heartbeat.getAllDeviceStatus()
+    let waterControlEngine = null
+    try {
+      waterControlEngine = require("../services/waterControlEngine")
+    } catch {}
+
+    const fullStatusMap = {}
+
+    // 先把数据库中登记的所有设备初始化（离线或取实时在线状态）
+    results.forEach((row) => {
+      const num = String(row.number).trim()
+      if (!num) return
+      if (statusMap[num]) {
+        fullStatusMap[num] = statusMap[num]
+      } else {
+        fullStatusMap[num] = {
+          status: "offline",
+          vstatus: null,
+          level: "unknown",
+          text: "离线",
+          updated_at: null,
+          control: waterControlEngine ? waterControlEngine.getDeviceControlStatus(num) : null,
+        }
+      }
+    })
+
+    // 如果还有通过 MQTT 活跃但未登记在 t_device 的设备，也并入展示
+    Object.entries(statusMap).forEach(([dNo, info]) => {
+      if (!fullStatusMap[dNo]) {
+        fullStatusMap[dNo] = info
+      }
+    })
+
+    res.send({
+      status: 0,
+      message: "查询成功",
+      data: fullStatusMap,
+    })
   })
 }
 
