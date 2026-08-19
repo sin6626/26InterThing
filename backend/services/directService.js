@@ -83,6 +83,15 @@ const updateGlobalDirect = async ({ config_id, f_type, value }) => {
   }
 
   await directRepository.upsertGlobalDirect(config_id, newValue)
+
+  // 如果更新的是主控制模式(config_id=0 或 topic=master)，同步更新单设备表中的记录，避免单设备残留旧值覆盖全局
+  if (config?.topic === "master" || String(config_id) === "0") {
+    try {
+      const { query } = require("../repositories/query")
+      await query("UPDATE t_direct SET value = ? WHERE config_id = ?", [newValue, config_id])
+    } catch {}
+  }
+
   await directHistoryRepository.insertDirectHistory({
     config_id,
     direct_name: config?.t_name,
@@ -98,9 +107,10 @@ const updateGlobalDirect = async ({ config_id, f_type, value }) => {
   try {
     const waterControlEngine = require("./waterControlEngine")
     const deviceNumbers = await directRepository.getAllDeviceNumbers()
-    deviceNumbers.forEach((dNo) => {
+    const targetDevices = deviceNumbers.length > 0 ? deviceNumbers : ["e46488d793284429"]
+    targetDevices.forEach((dNo) => {
       const state = waterControlEngine.getOrCreateDeviceState(dNo)
-      if (config.topic === "master") {
+      if (config.topic === "master" || String(config_id) === "0") {
         state.mode = newValue === "on" ? "auto" : "manual"
         if (newValue === "off") waterControlEngine.stopAuto(dNo)
       }
@@ -182,7 +192,7 @@ const updateDeviceDirect = async (dNo, { config_id, f_type, value }) => {
   try {
     const waterControlEngine = require("./waterControlEngine")
     const state = waterControlEngine.getOrCreateDeviceState(dNo)
-    if (config?.topic === "master") {
+    if (config?.topic === "master" || String(config_id) === "0") {
       state.mode = newValue === "on" ? "auto" : "manual"
       if (newValue === "off") waterControlEngine.stopAuto(dNo)
     }

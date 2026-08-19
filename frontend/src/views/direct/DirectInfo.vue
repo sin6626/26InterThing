@@ -11,12 +11,14 @@ import {
   updateTime,
 } from '@/api/sensor.js'
 import { useDeviceNumbers } from '@/composables/useDeviceNumbers'
+import { useDeviceStatus } from '@/composables/useDeviceStatus'
 import { useSwitchStore } from '@/stores/switch'
 
 // 当前正在查看或下发指令的设备编号。
 const d_noValue = ref('')
 const queryNo = ref('')
 const { numbers: options, fetchDeviceNumbers } = useDeviceNumbers()
+const { fetchDeviceStatus } = useDeviceStatus()
 const switchStore = useSwitchStore()
 // 顶部手动更新时间允许页面传入指定时间，再由后端转换成 MQTT 协议格式。
 const selectedUpdateTime = ref('')
@@ -66,7 +68,7 @@ const changeGlobalHandle = async (data) => {
   } catch (error) {
     ElMessage.error(error.message || '更新失败')
   } finally {
-    await getList(d_noValue.value)
+    await Promise.all([getList(d_noValue.value), fetchDeviceStatus()])
   }
 }
 
@@ -82,7 +84,7 @@ const changeDeviceHandle = async (data) => {
   } catch (error) {
     ElMessage.error(error.message || '更新失败')
   } finally {
-    await getList(d_noValue.value)
+    await Promise.all([getList(d_noValue.value), fetchDeviceStatus()])
   }
 }
 
@@ -101,7 +103,7 @@ const handleStartWaterControl = async () => {
     ElMessage.error(error.message || '启动失败')
   } finally {
     actionLoading.value = false
-    await getList(d_noValue.value)
+    await Promise.all([getList(d_noValue.value), fetchDeviceStatus()])
   }
 }
 
@@ -119,7 +121,7 @@ const handleStopWaterControl = async () => {
     ElMessage.error(error.message || '停止失败')
   } finally {
     actionLoading.value = false
-    await getList(d_noValue.value)
+    await Promise.all([getList(d_noValue.value), fetchDeviceStatus()])
   }
 }
 
@@ -137,7 +139,7 @@ const handleResetWaterControl = async () => {
     ElMessage.error(error.message || '复位失败')
   } finally {
     actionLoading.value = false
-    await getList(d_noValue.value)
+    await Promise.all([getList(d_noValue.value), fetchDeviceStatus()])
   }
 }
 
