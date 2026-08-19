@@ -24,38 +24,84 @@ const fail = (res, error, code = 400) => {
   })
 }
 
-// ===== 状态 =====
+// ===== 状态查询 =====
 
 app.get('/api/status', (_req, res) => {
   ok(res, {
     mqttConnected: mqttTest.state.connected,
+    mqttOptions: mqttTest.state.mqttOptions,
+    deviceId: mqttTest.state.deviceId,
+    physics: mqttTest.state.physics,
+    autoSensor: {
+      enabled: mqttTest.state.autoSensor.enabled,
+      intervalMs: mqttTest.state.autoSensor.intervalMs,
+      jitter: mqttTest.state.autoSensor.jitter,
+    },
     autoHeartbeat: {
       enabled: mqttTest.state.autoHeartbeat.enabled,
-      deviceId: mqttTest.state.autoHeartbeat.deviceId,
       vstatus: mqttTest.state.autoHeartbeat.vstatus,
       intervalMs: mqttTest.state.autoHeartbeat.intervalMs,
     },
+    receivedDirectCount: mqttTest.state.receivedDirectList.length,
+    lastReceivedUpdateTime: mqttTest.state.lastReceivedUpdateTime,
   })
 })
 
-// ===== 心跳 =====
+// ===== Broker 配置与重连 =====
 
-app.post('/api/heartbeat/send', async (req, res) => {
+app.post('/api/mqtt/reconnect', (req, res) => {
   try {
-    const result = await mqttTest.sendHeartbeat({
-      deviceId: req.body?.deviceId,
-      payload: req.body?.payload,
-    })
-    ok(res, result, '心跳已发送')
+    const updated = mqttTest.reconnectMqtt(req.body)
+    ok(res, updated, '已触发 MQTT 重连')
   } catch (error) {
     fail(res, error)
   }
 })
 
+// ===== 设备编号切换 =====
+
+app.post('/api/device/set', (req, res) => {
+  const dNo = String(req.body?.deviceId || '').trim()
+  if (!dNo) return fail(res, '设备编号不能为空')
+  mqttTest.state.deviceId = dNo
+  ok(res, { deviceId: dNo }, '设备编号已更新')
+})
+
+// ===== 物理仿真状态 =====
+
+app.post('/api/physics/update', (req, res) => {
+  try {
+    const next = mqttTest.updatePhysics(req.body)
+    ok(res, next, '物理状态已更新')
+  } catch (error) {
+    fail(res, error)
+  }
+})
+
+// ===== 自动传感器连续上报 =====
+
+app.post('/api/sensor/auto/start', (req, res) => {
+  try {
+    mqttTest.startAutoSensor({
+      intervalMs: req.body?.intervalMs,
+      jitter: req.body?.jitter,
+    })
+    ok(res, mqttTest.state.autoSensor, '自动连续上报已开启')
+  } catch (error) {
+    fail(res, error)
+  }
+})
+
+app.post('/api/sensor/auto/stop', (_req, res) => {
+  mqttTest.stopAutoSensor()
+  ok(res, mqttTest.state.autoSensor, '自动连续上报已停止')
+})
+
+// ===== 自动心跳 =====
+
 app.post('/api/heartbeat/auto/start', (req, res) => {
   try {
     mqttTest.startAutoHeartbeat({
-      deviceId: req.body?.deviceId,
       vstatus: req.body?.vstatus,
       intervalMs: req.body?.intervalMs,
     })
@@ -70,23 +116,26 @@ app.post('/api/heartbeat/auto/stop', (_req, res) => {
   ok(res, mqttTest.state.autoHeartbeat, '自动心跳已停止')
 })
 
-app.post('/api/heartbeat/auto/vstatus', (req, res) => {
-  mqttTest.setAutoHeartbeatVstatus(req.body?.vstatus)
-  ok(res, mqttTest.state.autoHeartbeat, '自动心跳 VStatus 已更新')
-})
+// ===== 单次发送：心跳 / 传感器 / 行为 / 错误 / 校时 / 指令上报 =====
 
-app.post('/api/heartbeat/auto/interval', (req, res) => {
-  mqttTest.setAutoHeartbeatInterval(req.body?.intervalMs)
-  ok(res, mqttTest.state.autoHeartbeat, '自动心跳间隔已更新')
+app.post('/api/heartbeat/send', async (req, res) => {
+  try {
+    const result = await mqttTest.sendHeartbeat({
+      deviceId: req.body?.deviceId,
+      payload: req.body?.payload,
+    })
+    ok(res, result, '心跳已发送')
+  } catch (error) {
+    fail(res, error)
+  }
 })
-
-// ===== 传感器、行为、错误 =====
 
 app.post('/api/sensor/send', async (req, res) => {
   try {
     const result = await mqttTest.sendSensor({
       deviceId: req.body?.deviceId,
       payload: req.body?.payload,
+      custom: req.body?.custom,
     })
     ok(res, result, '传感器数据已发送')
   } catch (error) {
@@ -118,8 +167,6 @@ app.post('/api/error/send', async (req, res) => {
   }
 })
 
-// ===== 时间同步请求 =====
-
 app.post('/api/time-request/send', async (req, res) => {
   try {
     const result = await mqttTest.sendTimeRequest({
@@ -131,8 +178,6 @@ app.post('/api/time-request/send', async (req, res) => {
     fail(res, error)
   }
 })
-
-// ===== 指令上报（设备端 -> 后端） =====
 
 app.post('/api/direct/report', async (req, res) => {
   try {
@@ -146,44 +191,31 @@ app.post('/api/direct/report', async (req, res) => {
   }
 })
 
-// ===== 接收到的消息查询 =====
+// ===== 一键场景测试宏 =====
+
+app.post('/api/scenario/run', async (req, res) => {
+  try {
+    const result = await mqttTest.runScenario(req.body?.type, req.body?.options)
+    ok(res, result, result.message || '场景已执行')
+  } catch (error) {
+    fail(res, error)
+  }
+})
+
+// ===== 接收到的下发消息查询 =====
 
 app.get('/api/received/direct', (_req, res) => {
-  ok(res, { data: mqttTest.state.lastReceivedDirect }, 'ok')
+  ok(res, { list: mqttTest.state.receivedDirectList }, 'ok')
 })
 
 app.get('/api/received/update-time', (_req, res) => {
   ok(res, { data: mqttTest.state.lastReceivedUpdateTime }, 'ok')
 })
 
-// ===== 故障场景 =====
-
-app.post('/api/scenario/fault', async (req, res) => {
-  try {
-    const result = await mqttTest.runFaultScenario({
-      deviceId: req.body?.deviceId,
-      code: req.body?.code,
-      durationMs: req.body?.durationMs,
-      e_no: req.body?.e_no,
-      e_msg: req.body?.e_msg,
-    })
-    ok(res, result, '故障场景已执行')
-  } catch (error) {
-    fail(res, error)
-  }
-})
-
-app.get('/api/preset/fault-codes', (_req, res) => {
-  ok(res, {
-    0: '正常',
-    1: '一般告警',
-    2: '通信异常',
-    3: '传感器故障',
-    4: '空调故障',
-    5: '风机故障',
-    6: '断电超时',
-    7: '危险气体/湿度超标',
-  })
+app.post('/api/received/clear', (_req, res) => {
+  mqttTest.state.receivedDirectList = []
+  mqttTest.state.lastReceivedUpdateTime = null
+  ok(res, {}, '已清空接收历史')
 })
 
 // ===== 静态页面 =====
