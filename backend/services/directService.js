@@ -106,6 +106,7 @@ const updateGlobalDirect = async ({ config_id, f_type, value }) => {
       }
       if (config.topic === "pump") state.pumpState = newValue
       if (config.topic === "heater") state.heaterState = newValue
+      waterControlEngine.notifyStatusChange(dNo)
     })
   } catch {}
 
@@ -187,6 +188,7 @@ const updateDeviceDirect = async (dNo, { config_id, f_type, value }) => {
     }
     if (config?.topic === "pump") state.pumpState = newValue
     if (config?.topic === "heater") state.heaterState = newValue
+    waterControlEngine.notifyStatusChange(dNo)
   } catch {}
 
   dispatchDeviceCommand(dNo, config_id, newValue).catch((error) => {

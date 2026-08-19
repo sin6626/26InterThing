@@ -98,7 +98,21 @@ const loadDeviceControlConfig = async (dNo) => {
     }
   }
 
+  const state = getOrCreateDeviceState(dNo)
+  state.mode = masterMode
+
   return { configsByTopic, masterMode, params }
+}
+
+const syncAllDeviceConfigs = async () => {
+  if (typeof configLoaderDep === "function") return
+  try {
+    const directRepository = require("../repositories/directRepository")
+    const deviceNumbers = await directRepository.getAllDeviceNumbers()
+    for (const dNo of deviceNumbers) {
+      await loadDeviceControlConfig(dNo)
+    }
+  } catch {}
 }
 
 // 下发动作并记录操作历史
@@ -580,6 +594,7 @@ const getDeviceControlStatus = (dNo) => {
 
 // 初始化定时器
 const initEngine = () => {
+  syncAllDeviceConfigs().catch(() => {})
   if (!timerId) {
     timerId = setInterval(() => {
       watchdogTick().catch((err) => console.error("[WaterControl] Watchdog error:", err))

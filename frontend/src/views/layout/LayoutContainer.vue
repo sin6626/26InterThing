@@ -81,22 +81,22 @@ const statusClass = (statusInfo) => {
 // 水循环状态机标签类型与文本
 const controlTagType = (control) => {
   if (!control) return 'info'
-  if (control.mode === 'manual') return 'info'
   if (control.fsmState === 'FAULT') return 'danger'
   if (control.fsmState === 'BUILDING_FLOW') return 'warning'
   if (control.fsmState === 'RUNNING') return 'success'
   if (control.fsmState === 'COOLING') return 'primary'
+  if (control.mode === 'auto') return 'success'
   return 'info'
 }
 
 const controlTagText = (control) => {
   if (!control) return ''
-  if (control.mode === 'manual') return '手动'
   if (control.fsmState === 'FAULT') return `故障: ${control.faultReason || '停机'}`
   if (control.fsmState === 'BUILDING_FLOW') return `建流中 ${control.countdown || 0}s`
   if (control.fsmState === 'RUNNING') return '自动运行中'
   if (control.fsmState === 'COOLING') return `冷却中 ${control.countdown || 0}s`
-  return control.fsmText || '已停止'
+  if (control.mode === 'auto') return '自动模式'
+  return '手动模式'
 }
 
 onMounted(async () => {
