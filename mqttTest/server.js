@@ -86,7 +86,8 @@ app.post('/api/sensor/auto/start', (req, res) => {
       intervalMs: req.body?.intervalMs,
       jitter: req.body?.jitter,
     })
-    ok(res, mqttTest.state.autoSensor, '自动连续上报已开启')
+    const { enabled, intervalMs, jitter } = mqttTest.state.autoSensor
+    ok(res, { enabled, intervalMs, jitter }, '自动连续上报已开启')
   } catch (error) {
     fail(res, error)
   }
@@ -94,7 +95,8 @@ app.post('/api/sensor/auto/start', (req, res) => {
 
 app.post('/api/sensor/auto/stop', (_req, res) => {
   mqttTest.stopAutoSensor()
-  ok(res, mqttTest.state.autoSensor, '自动连续上报已停止')
+  const { enabled, intervalMs, jitter } = mqttTest.state.autoSensor
+  ok(res, { enabled, intervalMs, jitter }, '自动连续上报已停止')
 })
 
 // ===== 自动心跳 =====
@@ -105,7 +107,8 @@ app.post('/api/heartbeat/auto/start', (req, res) => {
       vstatus: req.body?.vstatus,
       intervalMs: req.body?.intervalMs,
     })
-    ok(res, mqttTest.state.autoHeartbeat, '自动心跳已启动')
+    const { enabled, vstatus, intervalMs } = mqttTest.state.autoHeartbeat
+    ok(res, { enabled, vstatus, intervalMs }, '自动心跳已启动')
   } catch (error) {
     fail(res, error)
   }
@@ -113,7 +116,8 @@ app.post('/api/heartbeat/auto/start', (req, res) => {
 
 app.post('/api/heartbeat/auto/stop', (_req, res) => {
   mqttTest.stopAutoHeartbeat()
-  ok(res, mqttTest.state.autoHeartbeat, '自动心跳已停止')
+  const { enabled, vstatus, intervalMs } = mqttTest.state.autoHeartbeat
+  ok(res, { enabled, vstatus, intervalMs }, '自动心跳已停止')
 })
 
 // ===== 单次发送：心跳 / 传感器 / 行为 / 错误 / 校时 / 指令上报 =====
