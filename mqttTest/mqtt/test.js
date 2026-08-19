@@ -374,6 +374,33 @@ const runScenario = async (type, options = {}) => {
   const dNo = normalizeDeviceId(options.deviceId || state.deviceId)
 
   switch (type) {
+    // 0. 一键恢复物理常态：恢复为安全正常环境
+    case 'reset_normal': {
+      updatePhysics({
+        temp_out: 28.5,
+        temp_in: 25.0,
+        flow_rate: 0.8,
+        pressure: 85.0,
+        heat_Y1: 0,
+        water_Y2: 1,
+        vstatus: 0,
+      })
+      await sendSensor({
+        deviceId: dNo,
+        payload: {
+          temp_out: 28.5,
+          temp_in: 25.0,
+          flow_rate: 0.8,
+          pressure: 85.0,
+          heat_Y1: 0,
+          water_Y2: 1,
+          VStatus: 0,
+        },
+      })
+      await sendHeartbeat({ deviceId: dNo, payload: { vstatus: 0 } })
+      return { message: '已一键恢复物理常态（出水28.5℃/压力85kPa/流量0.8L/水泵开/加热关/正常心跳）' }
+    }
+
     // 1. 启动未建流：水泵开但流量为0持续6秒
     case 'flow_timeout': {
       updatePhysics({ water_Y2: 1, heat_Y1: 0, flow_rate: 0.0, pressure: 20.0, temp_out: 28.0 })

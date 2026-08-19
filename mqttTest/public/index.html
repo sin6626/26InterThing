@@ -374,6 +374,12 @@
             <p style="margin:0; font-size:12px; color:var(--muted);">点击以下按钮，模拟器将自动构造异常数据流，验证后端的安全保护逻辑：</p>
 
             <div class="scenario-grid">
+              <!-- 一键恢复正常 -->
+              <button class="scenario-btn success" data-scenario="reset_normal" style="grid-column: 1 / -1;">
+                <span class="title">🟢 一键恢复物理常态 (正常无故障环境)</span>
+                <span class="desc">将水温重置为28.5℃、流量0.8L/min、压力85kPa，发送正常心跳，供前台复位验证</span>
+              </button>
+
               <!-- 水循环五重保护 -->
               <button class="scenario-btn warning" data-scenario="flow_timeout">
                 <span class="title">🚨 建流超时 (5s)</span>
