@@ -124,8 +124,8 @@ export const stopWaterControl = (d_no) => {
   return request.post('/api/waterControl/stop', { d_no })
 }
 
-export const resetWaterControlFault = (d_no) => {
-  return request.post('/api/waterControl/reset', { d_no })
+export const resetWaterControlFault = (d_no, confirmed = false) => {
+  return request.post('/api/waterControl/reset', { d_no, confirmed })
 }
 
 export const getWaterControlStatus = (d_no) => {

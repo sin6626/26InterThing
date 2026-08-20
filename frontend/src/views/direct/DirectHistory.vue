@@ -17,6 +17,8 @@ const params = ref({
 
 const formatDateTime = (time) => dayjs(time).format('YYYY-MM-DD HH:mm:ss')
 const formatOperateTime = (time) => (time ? dayjs(time).format('YYYY-MM-DD HH:mm:ss') : '暂无')
+const formatDirection = (row) => row.remark?.startsWith('设备端上报') ? '设备端上报' : '应用层下发'
+const formatResult = (result) => result === 'failed' ? '发布失败' : '发布成功'
 
 const buildQueryParams = () => ({
   ...params.value,
@@ -103,7 +105,19 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column prop="old_value" label="原值" min-width="110" />
       <el-table-column prop="new_value" label="新值" min-width="110" />
-      <el-table-column prop="remark" label="方向" min-width="140" />
+      <el-table-column label="方向" min-width="120">
+        <template #default="scope">
+          {{ formatDirection(scope.row) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="发布结果" min-width="110">
+        <template #default="scope">
+          <el-tag :type="scope.row.result === 'failed' ? 'danger' : 'success'">
+            {{ formatResult(scope.row.result) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="remark" label="详情" min-width="220" show-overflow-tooltip />
     </el-table>
 
     <el-pagination

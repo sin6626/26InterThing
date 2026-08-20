@@ -10,6 +10,7 @@ const dbPool = require("./db") // 引入数据库连接池
 const mqttClient = require("./mqtt") // 引入 MQTT 客户端
 const { ensureErrorMessageMappings } = require("./services/errorMessageMapping")
 const { ensureDirectHistoryTable } = require("./repositories/directHistoryRepository")
+const { ensureControlConfigSchema } = require("./services/controlConfigSchema")
 // const mqttClientTest = require('./mqtt/sensorTest') // 引入 MQTT 测试心跳的客户端
 
 // 创建 Express 实例。
@@ -85,6 +86,14 @@ ensureDirectHistoryTable()
   })
   .catch((error) => {
     console.error("初始化指令操作历史表失败:", error.message)
+  })
+
+ensureControlConfigSchema()
+  .then(() => {
+    console.log("水循环控制配置已就绪")
+  })
+  .catch((error) => {
+    console.error("初始化水循环控制配置失败:", error.message)
   })
 
 // 启动水循环自动控制引擎。

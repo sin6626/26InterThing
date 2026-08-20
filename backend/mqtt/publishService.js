@@ -1,3 +1,5 @@
+const outboundEchoTracker = require("./outboundEchoTracker")
+
 const attachPublishHelpers = (mqttClient) => {
   // 所有“发给设备”的消息都尽量走这一套可靠发布逻辑：
   // - qos: 1
@@ -14,6 +16,9 @@ const attachPublishHelpers = (mqttClient) => {
       const publishSingle = () => {
         return new Promise((pubResolve, pubReject) => {
           const payloadText = JSON.stringify(payload)
+          if (topic === "device/direct") {
+            outboundEchoTracker.track(topic, payloadText)
+          }
           mqttClient.publish(
             topic,
             payloadText,

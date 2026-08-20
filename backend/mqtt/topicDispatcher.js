@@ -1,4 +1,5 @@
 const { getAlarmLevel, normalizeErrorCode, VSTATUS_TEXT } = require("./alarm")
+const defaultOutboundEchoTracker = require("./outboundEchoTracker")
 
 const parseIncomingPayload = (topic, rawStr) => {
   try {
@@ -21,10 +22,16 @@ const createTopicDispatcher = ({
   saveHandler,
   timeSyncHandler,
   waterControlHandler,
+  outboundEchoTracker = defaultOutboundEchoTracker,
 }) => {
   return async (topic, payload) => {
     const rawStr = payload.toString()
     console.log("[MQTT收到原始数据]", topic, "|", rawStr)
+
+    if (topic === "device/direct" && outboundEchoTracker.consumeIfTracked(topic, rawStr)) {
+      console.log("[MQTT忽略本机下发回环]", topic)
+      return
+    }
 
     const data = parseIncomingPayload(topic, rawStr)
     if (!data) {

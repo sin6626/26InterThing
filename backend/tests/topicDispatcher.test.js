@@ -111,3 +111,32 @@ test("createTopicDispatcher ignores malformed JSON payloads without throwing", a
     console.error = originalConsoleError
   }
 })
+
+test("createTopicDispatcher ignores application outbound echoes on device/direct", async () => {
+  const directCalls = []
+  const broadcasts = []
+  const dispatch = createTopicDispatcher({
+    broadcastToClients: (...args) => broadcasts.push(args),
+    directHandler: { updateDirect: (...args) => directCalls.push(args) },
+    heartbeatHandler: { handleHeartbeat: () => {} },
+    saveHandler: {
+      saveSensorData: () => {},
+      savebehaviorData: () => {},
+      saveErrorData: () => {},
+    },
+    timeSyncHandler: null,
+    outboundEchoTracker: {
+      consumeIfTracked: (topic, payloadText) => (
+        topic === "device/direct" && payloadText === '{"d_no":"202111","config_id":21,"topic":"pump","value":"on"}'
+      ),
+    },
+  })
+
+  await dispatch(
+    "device/direct",
+    Buffer.from('{"d_no":"202111","config_id":21,"topic":"pump","value":"on"}'),
+  )
+
+  assert.deepEqual(directCalls, [])
+  assert.deepEqual(broadcasts, [])
+})

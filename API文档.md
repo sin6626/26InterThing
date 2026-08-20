@@ -319,6 +319,7 @@ GET /direct/history/list
 | `d_no` | 设备编号，空值表示全局 |
 | `old_value` | 原值 |
 | `new_value` | 新值 |
+| `result` | `success`表示MQTT已发布；`failed`表示发布失败、超时或设备离线仅缓存 |
 | `remark` | 页面显示为“方向”：`应用层下发` 或 `设备端上报` |
 
 成功示例：
@@ -360,6 +361,40 @@ POST /updateTime
 
 - 应用层发布到 `device/updateTime`。
 - 写入操作历史，方向为 `应用层下发`。
+
+### 水循环自动控制
+
+```http
+POST /waterControl/start
+POST /waterControl/stop
+POST /waterControl/reset
+GET  /waterControl/status/:d_no
+```
+
+启动和停止请求体：
+
+```json
+{ "d_no": "202111" }
+```
+
+故障复位必须由页面完成现场确认后提交：
+
+```json
+{ "d_no": "202111", "confirmed": true }
+```
+
+状态接口的`data`在原状态字段基础上包含：
+
+| 字段 | 说明 |
+|---|---|
+| `faultCode` / `faultReason` | 结构化故障码及中文原因 |
+| `sensorUpdatedAt` | 四项关键传感器各自的服务端接收时间戳 |
+| `staleSensors` | 超时、缺失或非法的传感器字段列表 |
+| `pumpState` / `heaterState` | 由传感器上报得到的实际状态 |
+| `desiredPumpState` / `desiredHeaterState` | 应用层最近成功发布的期望状态 |
+| `lastCommandStatus` | 最近一次MQTT发布的`pending/success/failed`结果 |
+
+`data_timeout`按秒计算；`command_timeout`只约束MQTT发布/PUBACK，不等待设备或继电器执行ACK。
 
 ## WebSocket 推送
 

@@ -1,4 +1,5 @@
 const { query } = require("../repositories/query")
+const { ensureWaterControlConfigs } = require("./waterControlConfigSeed")
 
 const EXTRA_COLUMNS = [
   {
@@ -52,6 +53,7 @@ const ensureControlConfigSchema = async () => {
     for (const column of EXTRA_COLUMNS) {
       await ensureColumnExists(databaseName, column)
     }
+    await ensureWaterControlConfigs(query)
     ensuredDatabase = databaseName
   })().finally(() => {
     ensuringPromise = null

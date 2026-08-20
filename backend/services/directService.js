@@ -1,6 +1,7 @@
 const mqttClient = require("../mqtt")
 const heartbeat = require("../mqtt/mqtt_hander/heartbeat")
 const { buildDeviceCommandEnvelope } = require("../mqtt/commandMapper")
+const { resolveCommandTimeoutSeconds, waitForPublish } = require("../mqtt/publishTimeout")
 const directHistoryRepository = require("../repositories/directHistoryRepository")
 const directRepository = require("../repositories/directRepository")
 const { buildTree } = require("../utils/directTree")
@@ -30,35 +31,97 @@ const getDirectTrees = async (dNo) => {
   }
 }
 
+const publishCommand = async (dNo, commandEnvelope) => {
+  const configRows = await directRepository.getDeviceConfigRows(dNo)
+  const timeoutSeconds = resolveCommandTimeoutSeconds(configRows)
+  return waitForPublish(
+    mqttClient.publishToDevice(commandEnvelope.topic, commandEnvelope.payload),
+    timeoutSeconds,
+  )
+}
+
+const beginControlCommand = (dNo, config, value) => {
+  const waterControlEngine = require("./waterControlEngine")
+  const state = waterControlEngine.getOrCreateDeviceState(dNo)
+  const desiredKey = config?.topic === "pump"
+    ? "desiredPumpState"
+    : (config?.topic === "heater" ? "desiredHeaterState" : null)
+  const previousDesired = desiredKey ? state[desiredKey] : null
+  const startedAt = new Date().toISOString()
+  if (desiredKey) state[desiredKey] = value
+  state.lastCommandStatus = {
+    topic: config?.topic || "unknown",
+    value,
+    status: "pending",
+    startedAt,
+  }
+  waterControlEngine.notifyStatusChange(dNo)
+  return {
+    desiredKey,
+    previousDesired,
+    startedAt,
+    state,
+    topic: config?.topic || "unknown",
+    value,
+    waterControlEngine,
+  }
+}
+
+const finishControlCommand = (context, status, error = null) => {
+  if (status === "failed" && context.desiredKey) {
+    context.state[context.desiredKey] = context.previousDesired
+  }
+  context.state.lastCommandStatus = {
+    topic: context.topic,
+    value: context.value,
+    status,
+    error: error?.message,
+    startedAt: context.startedAt,
+    finishedAt: new Date().toISOString(),
+  }
+  context.waterControlEngine.notifyStatusChange(context.state.deviceId)
+}
+
 const dispatchGlobalCommand = async (config, value) => {
   // 全局指令的含义是“对所有设备都生效”，所以这里要遍历所有设备编号。
   const deviceNumbers = await directRepository.getAllDeviceNumbers()
 
-  deviceNumbers.forEach((dNo) => {
-    const status = heartbeat.getDeviceStatus(dNo)
-    // 先把页面/数据库里的值翻译成设备端真正认识的 payload。
-    const commandEnvelope = buildDeviceCommandEnvelope({
-      d_no: dNo,
-      config_id: config?.id,
-      topic: config?.topic,
-      publish_topic: config?.publish_topic,
-      payload_template: config?.payload_template,
-      value_map: config?.value_map,
-      value,
-    })
-
-    // 在线设备立即发，离线设备先缓存，等恢复在线后补发。
-    if (status && status.status === "online") {
-      mqttClient.publishToDevice(commandEnvelope.topic, commandEnvelope.payload).catch((error) => {
-        console.error(`发送全局指令到设备 ${dNo} 失败:`, error)
+  const results = []
+  for (const dNo of deviceNumbers) {
+    const commandContext = beginControlCommand(dNo, config, value)
+    try {
+      const status = heartbeat.getDeviceStatus(dNo)
+      // 先把页面/数据库里的值翻译成设备端真正认识的 payload。
+      const commandEnvelope = buildDeviceCommandEnvelope({
+        d_no: dNo,
+        config_id: config?.id,
+        topic: config?.topic,
+        publish_topic: config?.publish_topic,
+        payload_template: config?.payload_template,
+        value_map: config?.value_map,
+        value,
       })
-      return
+
+      // 在线设备立即发，离线设备先缓存，等恢复在线后补发。
+      if (status && status.status === "online") {
+        await publishCommand(dNo, commandEnvelope)
+        finishControlCommand(commandContext, "success")
+        results.push({ dNo, status: "published" })
+        continue
+      }
+
+      const offlineError = new Error("设备离线，指令未发布（已缓存）")
+      heartbeat.storeOfflineMessage(dNo, { commandEnvelope })
+      finishControlCommand(commandContext, "failed", offlineError)
+      results.push({ dNo, status: "queued", error: offlineError.message })
+    } catch (error) {
+      finishControlCommand(commandContext, "failed", error)
+      results.push({ dNo, status: "failed", error: error.message })
     }
+  }
 
-    heartbeat.storeOfflineMessage(dNo, { commandEnvelope })
-  })
-
-  console.log(`全局指令已发送给 ${deviceNumbers.length} 个设备`)
+  console.log(`全局指令处理完成：${results.filter((item) => item.status === "published").length} 台已发布，${results.filter((item) => item.status === "queued").length} 台离线缓存，${results.filter((item) => item.status === "failed").length} 台发布失败`)
+  return results
 }
 
 const updateGlobalDirect = async ({ config_id, f_type, value }) => {
@@ -92,37 +155,59 @@ const updateGlobalDirect = async ({ config_id, f_type, value }) => {
     } catch {}
   }
 
-  await directHistoryRepository.insertDirectHistory({
-    config_id,
-    direct_name: config?.t_name,
-    direct_type: config?.topic || "global",
-    new_value: newValue,
-    old_value: oldValue,
-    remark: "应用层下发",
-  })
-
   if (!config) return
 
-  // 同步水循环引擎状态
   try {
     const waterControlEngine = require("./waterControlEngine")
     const deviceNumbers = await directRepository.getAllDeviceNumbers()
-    const targetDevices = deviceNumbers.length > 0 ? deviceNumbers : ["e46488d793284429"]
-    targetDevices.forEach((dNo) => {
+    const stopErrors = []
+    for (const dNo of deviceNumbers) {
       const state = waterControlEngine.getOrCreateDeviceState(dNo)
       if (config.topic === "master" || String(config_id) === "0") {
         state.mode = newValue === "on" ? "auto" : "manual"
-        if (newValue === "off") waterControlEngine.stopAuto(dNo)
+        if (newValue === "off") {
+          try {
+            await waterControlEngine.stopAuto(dNo)
+          } catch (error) {
+            stopErrors.push({ dNo, error: error.message })
+          }
+        }
       }
-      if (config.topic === "pump") state.pumpState = newValue
-      if (config.topic === "heater") state.heaterState = newValue
       waterControlEngine.notifyStatusChange(dNo)
-    })
-  } catch {}
+    }
 
-  dispatchGlobalCommand(config, newValue).catch((error) => {
-    console.error("全局指令下发失败:", error)
-  })
+    const dispatchResults = await dispatchGlobalCommand(config, newValue)
+    const failedResults = dispatchResults.filter((item) => item.status !== "published")
+    if (failedResults.length || stopErrors.length) {
+      const publishSummary = failedResults
+        .map((item) => `${item.dNo}: ${item.error || "未发布"}`)
+        .join("；")
+      const stopSummary = stopErrors
+        .map((item) => `${item.dNo}: 停止流程失败(${item.error})`)
+        .join("；")
+      throw new Error(`部分设备控制失败: ${[stopSummary, publishSummary].filter(Boolean).join("；")}`)
+    }
+    await directHistoryRepository.insertDirectHistory({
+      config_id,
+      direct_name: config.t_name,
+      direct_type: config.topic || "global",
+      new_value: newValue,
+      old_value: oldValue,
+      result: "success",
+      remark: "应用层下发；MQTT发布成功",
+    })
+  } catch (error) {
+    await directHistoryRepository.insertDirectHistory({
+      config_id,
+      direct_name: config.t_name,
+      direct_type: config.topic || "global",
+      new_value: newValue,
+      old_value: oldValue,
+      result: "failed",
+      remark: `应用层下发失败: ${error.message}`,
+    })
+    throw error
+  }
 }
 
 const dispatchDeviceCommand = async (dNo, configId, newValue) => {
@@ -142,17 +227,24 @@ const dispatchDeviceCommand = async (dNo, configId, newValue) => {
     value: newValue,
   })
   const status = heartbeat.getDeviceStatus(dNo)
+  const commandContext = beginControlCommand(dNo, config, newValue)
 
   if (status && status.status === "online") {
-    mqttClient.publishToDevice(commandEnvelope.topic, commandEnvelope.payload).catch((error) => {
-      console.error("发送指令失败:", error)
-    })
-    return
+    try {
+      await publishCommand(dNo, commandEnvelope)
+      finishControlCommand(commandContext, "success")
+    } catch (error) {
+      finishControlCommand(commandContext, "failed", error)
+      throw error
+    }
+    return { status: "published" }
   }
 
   heartbeat.storeOfflineMessage(dNo, {
     commandEnvelope,
   })
+  finishControlCommand(commandContext, "failed", new Error("设备离线，指令未发布（已缓存）"))
+  return { status: "queued" }
 }
 
 const updateDeviceDirect = async (dNo, { config_id, f_type, value }) => {
@@ -178,32 +270,42 @@ const updateDeviceDirect = async (dNo, { config_id, f_type, value }) => {
     await directRepository.insertDeviceDirectValue(config_id, newValue, dNo)
   }
 
-  await directHistoryRepository.insertDirectHistory({
-    config_id,
-    d_no: dNo,
-    direct_name: config?.t_name,
-    direct_type: config?.topic || "device",
-    new_value: newValue,
-    old_value: oldValue,
-    remark: "应用层下发",
-  })
-
-  // 同步水循环引擎状态
   try {
+    const dispatchResult = await dispatchDeviceCommand(dNo, config_id, newValue)
+    if (dispatchResult.status !== "published") {
+      throw new Error("设备离线，指令未发布（已缓存待补发）")
+    }
     const waterControlEngine = require("./waterControlEngine")
     const state = waterControlEngine.getOrCreateDeviceState(dNo)
     if (config?.topic === "master" || String(config_id) === "0") {
       state.mode = newValue === "on" ? "auto" : "manual"
-      if (newValue === "off") waterControlEngine.stopAuto(dNo)
+      if (newValue === "off") await waterControlEngine.stopAuto(dNo)
     }
-    if (config?.topic === "pump") state.pumpState = newValue
-    if (config?.topic === "heater") state.heaterState = newValue
     waterControlEngine.notifyStatusChange(dNo)
-  } catch {}
 
-  dispatchDeviceCommand(dNo, config_id, newValue).catch((error) => {
-    console.error("设备指令下发失败:", error)
-  })
+    await directHistoryRepository.insertDirectHistory({
+      config_id,
+      d_no: dNo,
+      direct_name: config?.t_name,
+      direct_type: config?.topic || "device",
+      new_value: newValue,
+      old_value: oldValue,
+      result: "success",
+      remark: "应用层下发；MQTT发布成功",
+    })
+  } catch (error) {
+    await directHistoryRepository.insertDirectHistory({
+      config_id,
+      d_no: dNo,
+      direct_name: config?.t_name,
+      direct_type: config?.topic || "device",
+      new_value: newValue,
+      old_value: oldValue,
+      result: "failed",
+      remark: `应用层下发失败: ${error.message}`,
+    })
+    throw error
+  }
 }
 
 const updateTime = async (time) => {
@@ -241,17 +343,33 @@ const getDirectTypes = async () => {
 
 const startWaterControl = async (dNo) => {
   const waterControlEngine = require("./waterControlEngine")
-  // 同步把数据库中 master (config_id=0) 的值置为 on
+  const rootConfig = (await directRepository.getDeviceConfigRows(dNo))
+    .find((config) => config.topic === "master")
+  const rootConfigId = rootConfig?.id
+  const [previousGlobalValue, previousDeviceValue] = await Promise.all([
+    rootConfigId === undefined ? Promise.resolve(null) : directRepository.getGlobalDirectValue(rootConfigId),
+    dNo && rootConfigId !== undefined
+      ? directRepository.getDeviceDirectValue(rootConfigId, dNo)
+      : Promise.resolve(null),
+  ])
+  if (rootConfigId === undefined) throw new Error("未配置水循环控制模式")
+
+  await directRepository.upsertGlobalDirect(rootConfigId, "on")
+  if (dNo) await directRepository.updateDeviceDirectValue(rootConfigId, "on", dNo)
+
   try {
-    const rootConfig = await directRepository.getDirectConfigById(0)
-    if (rootConfig && rootConfig.topic === "master") {
-      await directRepository.upsertGlobalDirect(0, "on")
-      if (dNo) {
-        await directRepository.updateDeviceDirectValue(0, "on", dNo)
-      }
+    return await waterControlEngine.startAuto(dNo)
+  } catch (error) {
+    await directRepository.upsertGlobalDirect(rootConfigId, previousGlobalValue ?? "off")
+    if (dNo) {
+      await directRepository.updateDeviceDirectValue(
+        rootConfigId,
+        previousDeviceValue ?? previousGlobalValue ?? "off",
+        dNo,
+      )
     }
-  } catch {}
-  return waterControlEngine.startAuto(dNo)
+    throw error
+  }
 }
 
 const stopWaterControl = async (dNo) => {
@@ -259,7 +377,8 @@ const stopWaterControl = async (dNo) => {
   return waterControlEngine.stopAuto(dNo)
 }
 
-const resetWaterControlFault = async (dNo) => {
+const resetWaterControlFault = async (dNo, confirmed) => {
+  if (confirmed !== true) throw new Error("故障复位必须经过用户确认")
   const waterControlEngine = require("./waterControlEngine")
   return waterControlEngine.resetFault(dNo)
 }

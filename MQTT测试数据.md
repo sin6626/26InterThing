@@ -249,22 +249,22 @@ Topic：`device/direct`
 1. 先判断 `d_no` 是不是自己的设备编号。
 2. 用 `topic` 判断是哪条指令。
 3. 用 `value` 执行动作。
-4. 执行后如果要回传状态，再向 `device/direct` 发 `{ "d_no": "...", "config_id": ..., "value": "..." }`。
+4. 执行后如需上报本地状态变化，可再向 `device/direct` 发 `{ "d_no": "...", "config_id": ..., "value": "..." }`；应用层当前不把该上报作为执行ACK。
 
 应用层可能下发的 payload 示例：
 
 ```json
 {"d_no":"202111","config_id":0,"topic":"master","value":"on"}
-{"d_no":"202111","config_id":7,"topic":"pump","value":"off"}
-{"d_no":"202111","config_id":9,"topic":"temperatureLower","value":"24"}
-{"d_no":"202111","config_id":10,"topic":"temperatureUpper","value":"30"}
-{"d_no":"202111","config_id":11,"topic":"flowLow","value":"10"}
-{"d_no":"202111","config_id":12,"topic":"flowUpper","value":"20"}
-{"d_no":"202111","config_id":13,"topic":"pressuerLow","value":"10"}
-{"d_no":"202111","config_id":15,"topic":"pressureUpper","value":"20"}
+{"d_no":"202111","config_id":21,"topic":"pump","value":"off"}
+{"d_no":"202111","config_id":22,"topic":"heater","value":"off"}
+{"d_no":"202111","config_id":10,"topic":"target_temperature","value":"35"}
+{"d_no":"202111","config_id":12,"topic":"min_safe_flow","value":"0.5"}
+{"d_no":"202111","config_id":13,"topic":"max_safe_pressure","value":"150"}
 ```
 
 注意：后端可靠发布会连续发布两次同一条指令，设备端应按幂等处理。
+
+应用层将`command_timeout`解释为等待MQTT发布/PUBACK的最长秒数。发布成功只代表报文已交给Broker，不代表设备或继电器已经执行。应用层会过滤同一MQTT客户端收到的本机下发回环，避免把它误记为“设备端上报”。
 
 ### 2. 下发时间
 

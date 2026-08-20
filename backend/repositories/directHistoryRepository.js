@@ -26,7 +26,7 @@ const insertDirectHistory = ({
   return query(sql, [
     direct_type,
     d_no || null,
-    config_id || null,
+    config_id ?? null,
     direct_name || null,
     old_value ?? null,
     new_value ?? null,

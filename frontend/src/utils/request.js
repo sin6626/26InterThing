@@ -7,16 +7,58 @@ const request = axios.create({
   timeout: 5000
 })
 
+const parseRequestBody = (data) => {
+  if (typeof data !== 'string') return data
+  try {
+    return JSON.parse(data)
+  } catch {
+    return data
+  }
+}
+
+const sanitizeHeaders = (headers) => {
+  const source = typeof headers?.toJSON === 'function' ? headers.toJSON() : (headers || {})
+  return Object.fromEntries(
+    Object.entries(source).map(([key, value]) => {
+      const normalizedKey = key.toLowerCase()
+      const sensitive = normalizedKey === 'authorization'
+        || normalizedKey === 'cookie'
+        || normalizedKey.includes('token')
+      return [key, sensitive ? '[已脱敏]' : value]
+    }),
+  )
+}
+
+const resolveRequestUrl = (config = {}) => {
+  try {
+    return new URL(config.url || '', config.baseURL || window.location.origin).toString()
+  } catch {
+    return `${config.baseURL || ''}${config.url || ''}`
+  }
+}
+
+const logApiCall = ({ config, response, statusCode }) => {
+  console.log(JSON.stringify({
+    statusCode,
+    method: (config?.method || 'get').toUpperCase(),
+    url: resolveRequestUrl(config),
+    params: {
+      query: config?.params || {},
+      body: parseRequestBody(config?.data),
+    },
+    requestHeaders: sanitizeHeaders(config?.headers),
+    response,
+  }, null, 2))
+}
+
 // 后端接口约定 status=1 代表业务失败，这里统一转成 rejected Promise。
 request.interceptors.response.use(
   response => {
-    console.log(JSON.stringify({
+    logApiCall({
+      config: response.config,
+      response: response.data,
       statusCode: response.status,
-      method: (response.config?.method || 'get').toUpperCase(),
-      url: response.config?.url,
-      params: response.config?.params || response.config?.data,
-      response: response.data
-    }, null, 2))
+    })
 
     if (response.data.status === 1) {
       if (!response.config?.silent) {
@@ -27,6 +69,11 @@ request.interceptors.response.use(
     return response.data
   },
   error => {
+    logApiCall({
+      config: error.config,
+      response: error.response?.data || { message: error.message },
+      statusCode: error.response?.status ?? null,
+    })
     // 网络层错误统一翻译成中文提示，页面无需重复写状态码分支。
     let message = ''
     const status = error.response?.status

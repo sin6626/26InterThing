@@ -111,7 +111,7 @@ exports.resetWaterControlFault = async (req, res) => {
   try {
     const dNo = String(req.body?.d_no || "").trim()
     if (!dNo) return res.cc("设备编号不能为空")
-    const result = await directService.resetWaterControlFault(dNo)
+    const result = await directService.resetWaterControlFault(dNo, req.body?.confirmed === true)
     res.send({
       status: 0,
       message: result.message,

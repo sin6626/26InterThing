@@ -1,6 +1,6 @@
 <script setup>
-import { onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, onMounted, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getDirectInfo,
   resetWaterControlFault,
@@ -13,12 +13,13 @@ import {
 import { useDeviceNumbers } from '@/composables/useDeviceNumbers'
 import { useDeviceStatus } from '@/composables/useDeviceStatus'
 import { useSwitchStore } from '@/stores/switch'
+import { numericControlTopics, validateControlValue } from '@/utils/controlValidation'
 
 // 当前正在查看或下发指令的设备编号。
 const d_noValue = ref('')
 const queryNo = ref('')
 const { numbers: options, fetchDeviceNumbers } = useDeviceNumbers()
-const { fetchDeviceStatus } = useDeviceStatus()
+const { deviceStatusMap, fetchDeviceStatus } = useDeviceStatus()
 const switchStore = useSwitchStore()
 // 顶部手动更新时间允许页面传入指定时间，再由后端转换成 MQTT 协议格式。
 const selectedUpdateTime = ref('')
@@ -32,6 +33,16 @@ const globalTreeData = ref([])
 const deviceTreeData = ref([])
 const actionLoading = ref(false)
 const treeKey = ref(0)
+const sensorLabels = {
+  temp_in: '入口温度',
+  temp_out: '出口温度',
+  flow_rate: '流量',
+  pressure: '压力',
+}
+const currentControl = computed(() => deviceStatusMap.value[d_noValue.value]?.control || null)
+const staleSensorText = computed(() => (
+  (currentControl.value?.staleSensors || []).map((field) => sensorLabels[field] || field).join('、')
+))
 
 // 以某台设备为参照，同时拿到全局默认树和单设备覆盖树。
 const getList = async (no) => {
@@ -63,6 +74,7 @@ const normalizeUpdatePayload = (data) => ({
 // 全局指令更新后重新拉取列表，保证页面展示的是数据库最新值。
 const changeGlobalHandle = async (data) => {
   try {
+    validateControlValue(data, globalTreeData.value)
     await updateDirectGlobal(normalizeUpdatePayload(data))
     ElMessage.success('全局指令更新成功')
   } catch (error) {
@@ -79,6 +91,7 @@ const changeDeviceHandle = async (data) => {
     return
   }
   try {
+    validateControlValue(data, deviceTreeData.value)
     await updateDirect(normalizeUpdatePayload(data), d_noValue.value)
     ElMessage.success('设备单独指令更新成功')
   } catch (error) {
@@ -93,6 +106,10 @@ const handleStartWaterControl = async () => {
   const dNo = d_noValue.value || options.value[0]?.value || ''
   if (!dNo) {
     ElMessage.warning('未检测到有效设备编号')
+    return
+  }
+  if (currentControl.value?.fsmState === 'FAULT') {
+    ElMessage.warning(`请先确认并复位故障：${currentControl.value.faultReason || '未知故障'}`)
     return
   }
   actionLoading.value = true
@@ -131,9 +148,22 @@ const handleResetWaterControl = async () => {
     ElMessage.warning('未检测到有效设备编号')
     return
   }
+  try {
+    await ElMessageBox.confirm(
+      `请确认现场危险条件已经解除。当前故障：${currentControl.value?.faultReason || '未提供故障原因'}`,
+      '确认故障复位',
+      {
+        confirmButtonText: '已检查，确认复位',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return
+  }
   actionLoading.value = true
   try {
-    const res = await resetWaterControlFault(dNo)
+    const res = await resetWaterControlFault(dNo, true)
     ElMessage.success(res.message || '故障已复位')
   } catch (error) {
     ElMessage.error(error.message || '复位失败')
@@ -164,7 +194,7 @@ onMounted(async () => {
   if (options.value.length) {
     queryNo.value = options.value[0].value
     d_noValue.value = queryNo.value
-    await getList(d_noValue.value)
+    await Promise.all([getList(d_noValue.value), fetchDeviceStatus()])
   }
 })
 </script>
@@ -209,6 +239,20 @@ onMounted(async () => {
       </div>
     </template>
 
+    <div v-if="currentControl" class="control-status-panel">
+      <el-tag :type="currentControl.fsmState === 'FAULT' ? 'danger' : 'info'">
+        {{ currentControl.fsmText || currentControl.fsmState }}
+      </el-tag>
+      <span>水泵实际/期望：{{ currentControl.pumpState }} / {{ currentControl.desiredPumpState }}</span>
+      <span>加热实际/期望：{{ currentControl.heaterState }} / {{ currentControl.desiredHeaterState }}</span>
+      <span v-if="currentControl.countdown > 0">剩余 {{ currentControl.countdown }} 秒</span>
+      <span v-if="staleSensorText" class="danger-text">数据异常：{{ staleSensorText }}</span>
+      <span v-if="currentControl.lastCommandStatus?.status === 'failed'" class="danger-text">
+        发布失败：{{ currentControl.lastCommandStatus.error }}
+      </span>
+      <span v-if="currentControl.faultReason" class="danger-text">{{ currentControl.faultReason }}</span>
+    </div>
+
     <h3>全局指令</h3>
     <el-tree
       :key="`global-${treeKey}`"
@@ -228,6 +272,14 @@ onMounted(async () => {
             <template v-if="data.f_type === '1'">
               <el-switch v-model="data.value" @change="changeGlobalHandle(data)" />
             </template>
+            <el-input-number
+              v-else-if="data.f_type === '2' && numericControlTopics.has(data.topic)"
+              :model-value="Number(data.value)"
+              :controls="false"
+              style="width: 140px"
+              @update:model-value="(val) => handleValueInput(val, data)"
+              @change="changeGlobalHandle(data)"
+            />
             <el-input
               v-else-if="data.f_type === '2'"
               :model-value="data.value"
@@ -318,6 +370,14 @@ onMounted(async () => {
               <template v-if="data.f_type === '1'">
                 <el-switch v-model="data.value" @change="changeDeviceHandle(data)" />
               </template>
+              <el-input-number
+                v-else-if="data.f_type === '2' && numericControlTopics.has(data.topic)"
+                :model-value="Number(data.value)"
+                :controls="false"
+                style="width: 140px"
+                @update:model-value="(val) => handleValueInput(val, data)"
+                @change="changeDeviceHandle(data)"
+              />
               <el-input
                 v-else-if="data.f_type === '2'"
                 :model-value="data.value"
@@ -375,6 +435,23 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.control-status-panel {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  background: #fafafa;
+  color: #606266;
+}
+
+.danger-text {
+  color: #f56c6c;
 }
 
 .split {

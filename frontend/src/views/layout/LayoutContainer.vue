@@ -95,6 +95,7 @@ const controlTagText = (control) => {
   if (control.fsmState === 'BUILDING_FLOW') return `建流中 ${control.countdown || 0}s`
   if (control.fsmState === 'RUNNING') return '自动运行中'
   if (control.fsmState === 'COOLING') return `冷却中 ${control.countdown || 0}s`
+  if (control.fsmState === 'STOPPED') return '已停止'
   if (control.mode === 'auto') return '自动模式'
   return '手动模式'
 }
