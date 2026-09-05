@@ -72,9 +72,11 @@ const playAlarmSound = () => {
   }
 }
 
-// 顶部状态点只区分离线、在线正常、在线异常三种视觉状态。
+// 心跳已禁用；未监测状态使用中性灰色，控制故障仍使用红色。
 const statusClass = (statusInfo) => {
-  if (!statusInfo || statusInfo.status !== 'online') return 'offline'
+  if (statusInfo?.control?.fsmState === 'FAULT' || statusInfo?.level === 'error') return 'error'
+  if (!statusInfo || statusInfo.status === 'unmonitored') return 'unmonitored'
+  if (statusInfo.status !== 'online') return 'unmonitored'
   return Number(statusInfo.vstatus ?? 0) === 0 ? 'online' : 'error'
 }
 
@@ -333,7 +335,7 @@ onBeforeUnmount(() => {
               box-shadow: 0 0 4px #67c23a;
             }
 
-            &.offline {
+            &.unmonitored {
               background-color: #909399;
             }
 

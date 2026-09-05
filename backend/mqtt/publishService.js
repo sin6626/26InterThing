@@ -69,41 +69,6 @@ const attachPublishHelpers = (mqttClient) => {
     return publishReliable(topic, payload)
   }
 
-  // 设备离线期间先把消息缓存起来，恢复在线后由这里逐条补发。
-  mqttClient.publishOfflineMessages = async (deviceId, messages) => {
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      console.warn(`设备 ${deviceId} 无离线消息可发送`)
-      return
-    }
-
-    try {
-      for (const [index, msg] of messages.entries()) {
-        if (!msg || typeof msg !== "object") {
-          console.error(
-            `设备 ${deviceId} 第${index + 1}条离线消息格式错误：非对象类型`,
-            msg,
-          )
-          continue
-        }
-
-        const topic = msg.commandEnvelope?.topic || "device/direct"
-        const payload = msg.commandEnvelope?.payload || { d_no: deviceId, ...(msg.commandPayload || msg) }
-        await mqttClient.publishToDevice(topic, payload)
-
-        if (index < messages.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 200))
-        }
-      }
-
-      console.log(
-        `设备 ${deviceId} 的 ${messages.length} 条离线消息（每条双发）已全部发送成功`,
-      )
-    } catch (error) {
-      console.error(`设备 ${deviceId} 的离线消息发送失败:`, error)
-      throw error
-    }
-  }
-
   // 手动全局时间同步：走 device/updateTime。
   mqttClient.updateTime = async (time) => {
     return publishReliable("device/updateTime", time)

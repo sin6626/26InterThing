@@ -1,7 +1,6 @@
 // 所有 MQTT 入站订阅统一在这里注册，方便排查“当前服务到底监听了哪些主题”。
 const registerSubscriptions = (mqttClient) => {
   const subscriptions = [
-    ["device/heartbeat", "成功订阅心跳主题"],
     ["device/sensor", "成功订阅传感器数据主题"],
     ["device/behavior", "成功订阅行为数据主题"],
     ["device/error", "成功订阅错误数据主题"],

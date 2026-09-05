@@ -270,12 +270,6 @@ const getDeviceControlStatus = (dNo) => {
 
 const notifyStatusChange = (dNo) => {
   const state = getOrCreateDeviceState(dNo)
-  let statusInfo = null
-  try {
-    statusInfo = require("../mqtt/mqtt_hander/heartbeat").getDeviceStatus(dNo)
-  } catch {
-    statusInfo = null
-  }
 
   let broadcast = broadcastDep
   if (!broadcast) {
@@ -289,11 +283,11 @@ const notifyStatusChange = (dNo) => {
   if (typeof broadcast === "function") {
     broadcast("device_status", {
       d_no: dNo,
-      status: statusInfo?.status || "online",
-      vstatus: statusInfo?.vstatus ?? 0,
-      level: state.fsmState === FSM_STATES.FAULT ? "error" : (statusInfo?.level || "normal"),
-      text: state.fsmState === FSM_STATES.FAULT ? (state.faultReason || "设备故障") : (statusInfo?.text || "正常"),
-      updated_at: statusInfo?.updated_at || new Date().toLocaleString(),
+      status: "unmonitored",
+      vstatus: null,
+      level: state.fsmState === FSM_STATES.FAULT ? "error" : "unknown",
+      text: state.fsmState === FSM_STATES.FAULT ? (state.faultReason || "设备故障") : "未启用心跳",
+      updated_at: new Date().toLocaleString(),
       control: getDeviceControlStatus(dNo),
     })
   }

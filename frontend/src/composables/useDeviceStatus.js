@@ -9,37 +9,36 @@ const deviceStatusMap = ref({})
 let stopWsListen = null
 
 /**
- * 设备在线状态管理
+ * 设备控制状态管理。当前项目不启用心跳，在线状态统一为 unmonitored。
  */
 export function useDeviceStatus() {
   // 兼容后端返回字符串版和对象版两种状态结构。
   const normalizeStatusInfo = (raw) => {
     if (!raw) {
       return {
-        status: 'offline',
+        status: 'unmonitored',
         vstatus: null,
         level: 'unknown',
-        text: '离线',
+        text: '未启用心跳',
         updated_at: null,
       }
     }
 
     if (typeof raw === 'string') {
-      const online = raw === 'online'
       return {
-        status: online ? 'online' : 'offline',
-        vstatus: online ? 0 : null,
-        level: online ? 'normal' : 'unknown',
-        text: online ? '正常' : '离线',
+        status: 'unmonitored',
+        vstatus: null,
+        level: 'unknown',
+        text: '未启用心跳',
         updated_at: null,
       }
     }
 
     return {
-      status: raw.status || 'offline',
+      status: raw.status || 'unmonitored',
       vstatus: raw.status === 'online' ? raw.vstatus ?? 0 : null,
       level: raw.level || (raw.status === 'online' ? 'normal' : 'unknown'),
-      text: raw.text || (raw.status === 'online' ? '正常' : '离线'),
+      text: raw.text || (raw.status === 'online' ? '正常' : '未启用心跳'),
       updated_at: raw.updated_at || null,
       control: raw.control || null,
     }
@@ -59,16 +58,6 @@ export function useDeviceStatus() {
     } catch (error) {
       console.error('获取设备状态失败:', error)
     }
-  }
-
-  // 读取单个设备当前在线状态字符串。
-  const getDeviceOnlineStatus = (dNo) => {
-    return deviceStatusMap.value[dNo]?.status || 'offline'
-  }
-
-  // 常用布尔判断封装。
-  const isDeviceOnline = (dNo) => {
-    return deviceStatusMap.value[dNo]?.status === 'online'
   }
 
   // 实时消息覆盖发生变化的那台设备
@@ -96,8 +85,6 @@ export function useDeviceStatus() {
   return {
     deviceStatusMap,
     fetchDeviceStatus,
-    getDeviceOnlineStatus,
-    isDeviceOnline,
     startListening,
     stopListening,
   }

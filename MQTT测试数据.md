@@ -15,41 +15,14 @@
 ## 总规则
 
 1. 设备编号不放在 MQTT topic 里，统一放在 JSON payload 的 `d_no`。
-2. 设备端发给应用层，只用下面 6 个 topic：`device/heartbeat`、`device/sensor`、`device/behavior`、`device/error`、`device/timeRequest`、`device/direct`。
+2. 设备端发给应用层，只用下面 5 个 topic：`device/sensor`、`device/behavior`、`device/error`、`device/timeRequest`、`device/direct`。
 3. 应用层发给设备端，只用 `device/direct` 和 `device/updateTime`。
 4. payload 必须是合法 JSON；缺少 `d_no` 的设备端消息会被后端丢弃。
 5. 时间建议用 `YYYY-MM-DD HH:mm:ss`。
 
 ## 设备端 -> 应用层
 
-### 1. 心跳
-
-Topic：`device/heartbeat`
-
-```json
-{
-  "d_no": "202111",
-  "VStatus": 0,
-  "c_time": "2026-07-08 09:00:00"
-}
-```
-
-字段：
-
-| 字段 | 必填 | 说明 |
-|---|---|---|
-| `d_no` | 是 | 设备编号 |
-| `VStatus` / `vstatus` | 否 | 设备状态码；缺省按 `0` 正常处理 |
-| `c_time` | 否 | 设备侧时间；在线状态更新时间以后端时间为准 |
-
-快速测试：
-
-```json
-{"d_no":"202111","VStatus":0,"c_time":"2026-07-08 09:00:00"}
-{"d_no":"202112","VStatus":1,"c_time":"2026-07-08 09:00:03"}
-```
-
-### 2. 传感器数据
+### 1. 传感器数据
 
 Topic：`device/sensor`
 
@@ -295,12 +268,6 @@ Topic：`device/updateTime`
 - 不带 `d_no`：所有设备都可以处理。
 
 ## 最常用一键复制
-
-### 心跳
-
-```json
-{"d_no":"202111","VStatus":0,"c_time":"2026-07-08 09:00:00"}
-```
 
 ### 传感器
 

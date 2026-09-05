@@ -1,8 +1,8 @@
 // 设备管理相关接口：
 // - 设备列表 / 单设备详情
 // - 新增 / 编辑 / 删除
-// - 当前在线状态
-// 这里还是“接口层”，真正复杂的状态来源来自 heartbeat 模块。
+// - 当前控制状态
+// 当前项目不启用心跳，设备状态统一标记为 unmonitored。
 
 // 导入数据库操作模块
 const db = require("../db/index")
@@ -10,16 +10,12 @@ const db = require("../db/index")
 // 导入dayjs
 const dayjs = require("dayjs") // 导入dayjs
 
-// 导入处理设备状态模块
-const heartbeat = require("../mqtt/mqtt_hander/heartbeat")  // 新增
-
-// 返回实际设备列表结合在线状态与控制状态（严格以数据库已登记设备为准）。
+// 返回实际设备列表与控制状态（严格以数据库已登记设备为准）。
 exports.deviceStatus = (req, res) => {
   const sql = `select number from t_device where number is not null and number <> '' order by cast(number as unsigned), number`
   db.query(sql, (err, results) => {
     if (err) return res.cc(err)
 
-    const statusMap = heartbeat.getAllDeviceStatus()
     let waterControlEngine = null
     try {
       waterControlEngine = require("../services/waterControlEngine")
@@ -31,17 +27,13 @@ exports.deviceStatus = (req, res) => {
     results.forEach((row) => {
       const num = String(row.number).trim()
       if (!num) return
-      if (statusMap[num]) {
-        fullStatusMap[num] = statusMap[num]
-      } else {
-        fullStatusMap[num] = {
-          status: "offline",
-          vstatus: null,
-          level: "unknown",
-          text: "离线",
-          updated_at: null,
-          control: waterControlEngine ? waterControlEngine.getDeviceControlStatus(num) : null,
-        }
+      fullStatusMap[num] = {
+        status: "unmonitored",
+        vstatus: null,
+        level: "unknown",
+        text: "未启用心跳",
+        updated_at: null,
+        control: waterControlEngine ? waterControlEngine.getDeviceControlStatus(num) : null,
       }
     })
 

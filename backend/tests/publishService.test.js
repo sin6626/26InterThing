@@ -52,69 +52,28 @@ test("updateDeviceTime publishes shared time sync topic with payload d_no", asyn
   assert.deepEqual(calls[1], calls[0])
 })
 
-test("publishOfflineMessages publishes shared direct topic", async () => {
-  const calls = []
+test("attachPublishHelpers does not expose offline message replay", () => {
   const mqttClient = {
     connected: true,
-    publish: (topic, payloadText, options, callback) => {
-      calls.push({ topic, payloadText, options })
-      callback(null)
-    },
+    publish: () => {},
   }
 
   attachPublishHelpers(mqttClient)
 
-  await mqttClient.publishOfflineMessages("202111", [
-    {
-      commandPayload: {
-        d_no: "202111",
-        topic: "pump",
-        value: "off",
-      },
-    },
-  ])
-
-  assert.equal(calls.length, 2)
-  assert.deepEqual(calls[0], {
-    topic: "device/direct",
-    payloadText: '{"d_no":"202111","topic":"pump","value":"off"}',
-    options: { qos: 1, retain: false },
-  })
-  assert.deepEqual(calls[1], calls[0])
+  assert.equal(mqttClient.publishOfflineMessages, undefined)
 })
 
-test("publishOfflineMessages supports custom envelope topic and payload", async () => {
-  const calls = []
+test("publishToDevice fails immediately when Broker is disconnected and never queues", async () => {
   const mqttClient = {
-    connected: true,
-    publish: (topic, payloadText, options, callback) => {
-      calls.push({ topic, payloadText, options })
-      callback(null)
-    },
+    connected: false,
+    publish: () => assert.fail("断开连接时不应调用底层publish"),
   }
 
   attachPublishHelpers(mqttClient)
 
-  await mqttClient.publishOfflineMessages("202111", [
-    {
-      commandEnvelope: {
-        topic: "device/direct",
-        payload: {
-          mb: "010600010001",
-          sn: 1,
-          ack: 0,
-          crc: 1,
-          uart: 6,
-        },
-      },
-    },
-  ])
-
-  assert.equal(calls.length, 2)
-  assert.deepEqual(calls[0], {
-    topic: "device/direct",
-    payloadText: '{"mb":"010600010001","sn":1,"ack":0,"crc":1,"uart":6}',
-    options: { qos: 1, retain: false },
-  })
-  assert.deepEqual(calls[1], calls[0])
+  await assert.rejects(
+    mqttClient.publishToDevice("device/direct", { mb: "010600010000" }),
+    /后端的MQTT客户端未连接/,
+  )
+  assert.equal(mqttClient.publishOfflineMessages, undefined)
 })

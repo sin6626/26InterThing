@@ -3,6 +3,27 @@ const assert = require("node:assert/strict")
 
 const { createTopicDispatcher } = require("../mqtt/topicDispatcher")
 
+test("createTopicDispatcher ignores heartbeat messages when heartbeat is disabled", async () => {
+  const heartbeatCalls = []
+  const dispatch = createTopicDispatcher({
+    broadcastToClients: () => {},
+    directHandler: { updateDirect: () => {} },
+    heartbeatHandler: {
+      handleHeartbeat: (...args) => heartbeatCalls.push(args),
+    },
+    saveHandler: {
+      saveSensorData: () => {},
+      savebehaviorData: () => {},
+      saveErrorData: () => {},
+    },
+    timeSyncHandler: null,
+  })
+
+  await dispatch("device/heartbeat", Buffer.from('{"d_no":"202111","VStatus":0}'))
+
+  assert.deepEqual(heartbeatCalls, [])
+})
+
 test("createTopicDispatcher routes timeRequest messages using payload d_no", async () => {
   const calls = []
   const dispatch = createTopicDispatcher({

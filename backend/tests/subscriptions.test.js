@@ -15,7 +15,6 @@ test("registerSubscriptions listens on shared device topics", () => {
   registerSubscriptions(mqttClient, null)
 
   assert.deepEqual(topics, [
-    "device/heartbeat",
     "device/sensor",
     "device/behavior",
     "device/error",

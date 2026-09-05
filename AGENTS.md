@@ -21,7 +21,8 @@
 
 - 已具备：Web 端、传感器实时/历史数据、行为数据、错误数据、设备管理、指令配置/下发、设备端指令上报、指令操作历史查询、MQTT、WebSocket、MySQL 存储。
 - 指令操作历史已使用 `t_direct_history`，页面“方向”只有 `应用层下发` 和 `设备端上报` 两类。
-- MQTT 入站主题已改为 `device/heartbeat`、`device/sensor`、`device/behavior`、`device/error`、`device/timeRequest`、`device/direct`；设备编号统一放在 payload 的 `d_no` 字段。
+- MQTT 入站主题使用 `device/sensor`、`device/behavior`、`device/error`、`device/timeRequest`、`device/direct`；设备编号统一放在 payload 的 `d_no` 字段。
+- 心跳机制已停用：不订阅 `device/heartbeat`，不判断在线/离线，不缓存或恢复补发离线指令；控制指令直接尝试发布到 MQTT Broker，设备状态接口统一返回 `unmonitored/未启用心跳`。
 - MQTT 指令下发统一使用 `device/direct`，payload 为 `{ d_no, config_id, topic, value }`。
 - `t_direct_config` 已扩展支持 `publish_topic`、`payload_template`、`value_map` 三个字段：默认仍兼容旧 payload；如需适配设备端原始报文，可在模板里按节点配置真实 MQTT 主题、JSON 载荷模板和取值映射（例如把 `on/off` 映射为不同 `mb` 字符串）。
 - MQTT 入站如果收到非法 JSON，应用层现在会记录原始 payload 并忽略该条消息，不再因为 `JSON.parse` 直接崩溃；但要真正入库和展示，设备端仍必须发送合法 JSON。
@@ -60,5 +61,5 @@
 
 - 详细报告见 `水循环系统需求符合性实测报告-2026-08-24.md`；本轮在独立数据库、独立 MQTT Broker 和仿真设备中完成页面、HTTP、WebSocket、MySQL、MQTT 端到端实测。
 - 后端 84 项、前端 21 项测试全部通过，前端生产构建成功；10 项参数、五态状态机及主要安全边界均能运行。
-- 当前仍不可按需求最终验收：存在“停止过程中可能并发重开加热”和“发布失败的离线安全指令恢复连接后静默补发”两项 P0 风险。
+- 该报告记录的是当时版本；其中“发布失败的离线安全指令恢复连接后静默补发”已在 2026-09-05 随心跳机制停用一并消除。“停止过程中可能并发重开加热”仍需另行修复。
 - 另有故障状态每秒重复下发并写历史、仿真器加热 Modbus 映射不一致、单设备历史页混入遗留设备数据三项 P1 问题；修复后需按报告 C01～C18 全量回归。

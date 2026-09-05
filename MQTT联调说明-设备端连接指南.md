@@ -51,16 +51,18 @@
 
 ## 主题约定（本项目）
 
-- 心跳上报: `device/{d_no}/heartbeat`
-- 传感器上报: `device/{d_no}/sensor`
-- 行为上报: `device/{d_no}/behavior`
-- 错误上报: `device/{d_no}/error`
-- 指令下发（后端->设备）: `device/{topic}/direct`
+- 不使用心跳主题。
+- 传感器上报: `device/sensor`
+- 行为上报: `device/behavior`
+- 错误上报: `device/error`
+- 时间请求: `device/timeRequest`
+- 设备端指令上报及默认指令下发: `device/direct`
+- 设备编号统一放在 JSON payload 的 `d_no` 字段中。
 
 示例（设备号 `202111`）：
 
-- `device/202111/heartbeat`
-- `device/202111/sensor`
+- Topic：`device/sensor`
+- Payload：`{"d_no":"202111","temp_out":28.7}`
 
 ---
 

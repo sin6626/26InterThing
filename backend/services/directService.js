@@ -1,5 +1,4 @@
 const mqttClient = require("../mqtt")
-const heartbeat = require("../mqtt/mqtt_hander/heartbeat")
 const { buildDeviceCommandEnvelope } = require("../mqtt/commandMapper")
 const { resolveCommandTimeoutSeconds, waitForPublish } = require("../mqtt/publishTimeout")
 const directHistoryRepository = require("../repositories/directHistoryRepository")
@@ -8,7 +7,7 @@ const { buildTree } = require("../utils/directTree")
 const { createTimeSyncService } = require("./timeSyncService")
 
 // 指令服务层：
-// 负责“读指令树、写数据库、判断设备在线状态、下发 MQTT、缓存离线消息”。
+// 负责“读指令树、写数据库、下发 MQTT”。当前不使用心跳状态拦截指令。
 const timeSyncService = createTimeSyncService({ mqttClient })
 
 const normalizeValue = (value, fType) => {
@@ -90,7 +89,6 @@ const dispatchGlobalCommand = async (config, value) => {
   for (const dNo of deviceNumbers) {
     const commandContext = beginControlCommand(dNo, config, value)
     try {
-      const status = heartbeat.getDeviceStatus(dNo)
       // 先把页面/数据库里的值翻译成设备端真正认识的 payload。
       const commandEnvelope = buildDeviceCommandEnvelope({
         d_no: dNo,
@@ -102,25 +100,16 @@ const dispatchGlobalCommand = async (config, value) => {
         value,
       })
 
-      // 在线设备立即发，离线设备先缓存，等恢复在线后补发。
-      if (status && status.status === "online") {
-        await publishCommand(dNo, commandEnvelope)
-        finishControlCommand(commandContext, "success")
-        results.push({ dNo, status: "published" })
-        continue
-      }
-
-      const offlineError = new Error("设备离线，指令未发布（已缓存）")
-      heartbeat.storeOfflineMessage(dNo, { commandEnvelope })
-      finishControlCommand(commandContext, "failed", offlineError)
-      results.push({ dNo, status: "queued", error: offlineError.message })
+      await publishCommand(dNo, commandEnvelope)
+      finishControlCommand(commandContext, "success")
+      results.push({ dNo, status: "published" })
     } catch (error) {
       finishControlCommand(commandContext, "failed", error)
       results.push({ dNo, status: "failed", error: error.message })
     }
   }
 
-  console.log(`全局指令处理完成：${results.filter((item) => item.status === "published").length} 台已发布，${results.filter((item) => item.status === "queued").length} 台离线缓存，${results.filter((item) => item.status === "failed").length} 台发布失败`)
+  console.log(`全局指令处理完成：${results.filter((item) => item.status === "published").length} 台已发布，${results.filter((item) => item.status === "failed").length} 台发布失败`)
   return results
 }
 
@@ -226,25 +215,16 @@ const dispatchDeviceCommand = async (dNo, configId, newValue) => {
     value_map: config.value_map,
     value: newValue,
   })
-  const status = heartbeat.getDeviceStatus(dNo)
   const commandContext = beginControlCommand(dNo, config, newValue)
 
-  if (status && status.status === "online") {
-    try {
-      await publishCommand(dNo, commandEnvelope)
-      finishControlCommand(commandContext, "success")
-    } catch (error) {
-      finishControlCommand(commandContext, "failed", error)
-      throw error
-    }
-    return { status: "published" }
+  try {
+    await publishCommand(dNo, commandEnvelope)
+    finishControlCommand(commandContext, "success")
+  } catch (error) {
+    finishControlCommand(commandContext, "failed", error)
+    throw error
   }
-
-  heartbeat.storeOfflineMessage(dNo, {
-    commandEnvelope,
-  })
-  finishControlCommand(commandContext, "failed", new Error("设备离线，指令未发布（已缓存）"))
-  return { status: "queued" }
+  return { status: "published" }
 }
 
 const updateDeviceDirect = async (dNo, { config_id, f_type, value }) => {
@@ -273,7 +253,7 @@ const updateDeviceDirect = async (dNo, { config_id, f_type, value }) => {
   try {
     const dispatchResult = await dispatchDeviceCommand(dNo, config_id, newValue)
     if (dispatchResult.status !== "published") {
-      throw new Error("设备离线，指令未发布（已缓存待补发）")
+      throw new Error("MQTT指令未发布")
     }
     const waterControlEngine = require("./waterControlEngine")
     const state = waterControlEngine.getOrCreateDeviceState(dNo)

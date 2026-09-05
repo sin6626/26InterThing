@@ -255,7 +255,7 @@ POST /updateDirect/:d_no
 
 - 后端会把开关类值标准化为 `on/off`。
 - 数据库更新成功后，会写入 `t_direct_history`，方向为 `应用层下发`。
-- 在线设备立即通过 MQTT `device/direct` 下发，离线设备缓存后上线补发；payload 会包含 `d_no`、`config_id`、`topic` 和最终指令值。
+- 不使用心跳或在线状态拦截，直接通过 MQTT 发布到配置的主题；发布失败立即返回错误，不缓存、不恢复补发。
 
 ### 更新全局指令
 
@@ -269,7 +269,7 @@ POST /updateDirectGlobal
 
 - 写入 `t_direct_global`。
 - 写入操作历史，方向为 `应用层下发`。
-- 会对所有设备逐个生成带 `d_no` 的 payload，并执行在线直发或离线缓存。
+- 会对所有设备逐个生成带 `d_no` 的 payload，并直接尝试 MQTT 发布。
 
 ### 获取指令类型选项
 
@@ -319,7 +319,7 @@ GET /direct/history/list
 | `d_no` | 设备编号，空值表示全局 |
 | `old_value` | 原值 |
 | `new_value` | 新值 |
-| `result` | `success`表示MQTT已发布；`failed`表示发布失败、超时或设备离线仅缓存 |
+| `result` | `success`表示MQTT已发布；`failed`表示发布失败或超时 |
 | `remark` | 页面显示为“方向”：`应用层下发` 或 `设备端上报` |
 
 成功示例：
@@ -413,7 +413,7 @@ GET  /waterControl/status/:d_no
 | `behavior_realtime` | 收到 `device/behavior` | 行为实时数据 |
 | `error_realtime` | 收到 `device/error` | 错误实时数据 |
 | `alarm_realtime` | 错误或异常状态触发 | 前端告警通知 |
-| `device_status` | 心跳或状态变化 | 设备在线/异常状态 |
+| `device_status` | 水循环控制状态变化 | 心跳未启用；`status=unmonitored`，`control`包含控制状态 |
 | `direct_response` | 收到 `device/direct` | 设备端指令上报或执行状态 |
 
 ## MQTT 协议
@@ -422,12 +422,13 @@ GET  /waterControl/status/:d_no
 
 | 主题 | 说明 |
 |---|---|
-| `device/heartbeat` | 心跳，payload 必须带 `d_no` |
 | `device/sensor` | 温度、压力、流量数据，payload 必须带 `d_no` |
 | `device/behavior` | 行为/判定数据，payload 必须带 `d_no` |
 | `device/error` | 错误数据，payload 必须带 `d_no` |
 | `device/timeRequest` | 请求时间同步，payload 必须带 `d_no` |
 | `device/direct` | 设备端本地指令变更上报，payload 必须带 `d_no` |
+
+当前版本不订阅 `device/heartbeat`，设备端无需发送心跳。系统不会依据心跳拦截、缓存或恢复补发控制指令。
 
 设备端指令上报示例：
 
