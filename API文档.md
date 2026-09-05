@@ -220,7 +220,7 @@ GET /deviceNumbers
 GET /deviceStatus
 ```
 
-返回设备在线/离线和 `VStatus` 对应状态。
+返回数据库登记设备及水循环控制状态。心跳已停用，设备状态固定为 `status=unmonitored`、`text=未启用心跳`。
 
 ## 指令接口
 

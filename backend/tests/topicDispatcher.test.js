@@ -4,24 +4,23 @@ const assert = require("node:assert/strict")
 const { createTopicDispatcher } = require("../mqtt/topicDispatcher")
 
 test("createTopicDispatcher ignores heartbeat messages when heartbeat is disabled", async () => {
-  const heartbeatCalls = []
+  const sideEffects = []
   const dispatch = createTopicDispatcher({
-    broadcastToClients: () => {},
-    directHandler: { updateDirect: () => {} },
-    heartbeatHandler: {
-      handleHeartbeat: (...args) => heartbeatCalls.push(args),
-    },
+    broadcastToClients: (...args) => sideEffects.push(["broadcast", ...args]),
+    directHandler: { updateDirect: (...args) => sideEffects.push(["direct", ...args]) },
     saveHandler: {
-      saveSensorData: () => {},
-      savebehaviorData: () => {},
-      saveErrorData: () => {},
+      saveSensorData: (...args) => sideEffects.push(["sensor", ...args]),
+      savebehaviorData: (...args) => sideEffects.push(["behavior", ...args]),
+      saveErrorData: (...args) => sideEffects.push(["error", ...args]),
     },
-    timeSyncHandler: null,
+    timeSyncHandler: {
+      handleTimeRequest: (...args) => sideEffects.push(["time", ...args]),
+    },
   })
 
   await dispatch("device/heartbeat", Buffer.from('{"d_no":"202111","VStatus":0}'))
 
-  assert.deepEqual(heartbeatCalls, [])
+  assert.deepEqual(sideEffects, [])
 })
 
 test("createTopicDispatcher routes timeRequest messages using payload d_no", async () => {
@@ -29,7 +28,6 @@ test("createTopicDispatcher routes timeRequest messages using payload d_no", asy
   const dispatch = createTopicDispatcher({
     broadcastToClients: () => {},
     directHandler: { updateDirect: () => {} },
-    heartbeatHandler: { handleHeartbeat: () => {} },
     saveHandler: {
       saveSensorData: () => {},
       savebehaviorData: () => {},
@@ -59,7 +57,6 @@ test("createTopicDispatcher keeps sensor d_no from payload on shared topic", asy
       broadcasts.push({ type, data })
     },
     directHandler: { updateDirect: () => {} },
-    heartbeatHandler: { handleHeartbeat: () => {} },
     saveHandler: {
       saveSensorData: (topic, payload, callback) => {
         callback(null)
@@ -87,7 +84,6 @@ test("createTopicDispatcher keeps sensor d_no from payload on shared topic", asy
 test("createTopicDispatcher ignores malformed JSON payloads without throwing", async () => {
   const broadcasts = []
   const saveCalls = []
-  const heartbeatCalls = []
   const directCalls = []
   const errors = []
   const originalConsoleError = console.error
@@ -105,11 +101,6 @@ test("createTopicDispatcher ignores malformed JSON payloads without throwing", a
           directCalls.push(args)
         },
       },
-      heartbeatHandler: {
-        handleHeartbeat: (...args) => {
-          heartbeatCalls.push(args)
-        },
-      },
       saveHandler: {
         saveSensorData: (...args) => {
           saveCalls.push(args)
@@ -124,7 +115,6 @@ test("createTopicDispatcher ignores malformed JSON payloads without throwing", a
 
     assert.deepEqual(broadcasts, [])
     assert.deepEqual(saveCalls, [])
-    assert.deepEqual(heartbeatCalls, [])
     assert.deepEqual(directCalls, [])
     assert.equal(errors.length, 1)
     assert.match(String(errors[0][0]), /MQTT消息解析失败/)
@@ -139,7 +129,6 @@ test("createTopicDispatcher ignores application outbound echoes on device/direct
   const dispatch = createTopicDispatcher({
     broadcastToClients: (...args) => broadcasts.push(args),
     directHandler: { updateDirect: (...args) => directCalls.push(args) },
-    heartbeatHandler: { handleHeartbeat: () => {} },
     saveHandler: {
       saveSensorData: () => {},
       savebehaviorData: () => {},

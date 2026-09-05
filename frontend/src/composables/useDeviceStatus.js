@@ -14,17 +14,7 @@ let stopWsListen = null
 export function useDeviceStatus() {
   // 兼容后端返回字符串版和对象版两种状态结构。
   const normalizeStatusInfo = (raw) => {
-    if (!raw) {
-      return {
-        status: 'unmonitored',
-        vstatus: null,
-        level: 'unknown',
-        text: '未启用心跳',
-        updated_at: null,
-      }
-    }
-
-    if (typeof raw === 'string') {
+    if (!raw || typeof raw === 'string') {
       return {
         status: 'unmonitored',
         vstatus: null,

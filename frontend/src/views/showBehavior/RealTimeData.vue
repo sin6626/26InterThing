@@ -247,7 +247,7 @@ onBeforeUnmount(() => {
       </el-descriptions-item>
 
       <el-descriptions-item label="是否在线">
-        <el-tag>{{ sensorData.values['是否在线'] || '离线' }}</el-tag>
+        <el-tag>{{ sensorData.values['是否在线'] || '未启用心跳' }}</el-tag>
       </el-descriptions-item>
 
       <el-descriptions-item label="更新时间">
