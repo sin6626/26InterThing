@@ -33,17 +33,20 @@ const formatNowTimeString = () => {
 }
 
 const preparePayload = (rawPayload) => {
+  const now = formatNowTimeString()
   if (typeof rawPayload === 'object' && rawPayload !== null) {
     return JSON.stringify({
       ...rawPayload,
-      time: formatNowTimeString(),
+      time: now,
+      c_time: now,
     })
   }
   if (typeof rawPayload === 'string') {
     try {
       const parsed = JSON.parse(rawPayload)
       if (typeof parsed === 'object' && parsed !== null) {
-        parsed.time = formatNowTimeString()
+        parsed.time = now
+        parsed.c_time = now
         return JSON.stringify(parsed)
       }
     } catch {}

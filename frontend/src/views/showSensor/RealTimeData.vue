@@ -84,7 +84,8 @@ const updateSensorData = (rawData) => {
 
   // 更新在线状态和时间
   if (rawData.online !== undefined) currentValues['是否在线'] = rawData.online
-  if (rawData.c_time !== undefined) currentValues['更新时间'] = rawData.c_time
+  const updateTimeVal = rawData.c_time ?? rawData.time
+  if (updateTimeVal !== undefined) currentValues['更新时间'] = updateTimeVal
 
   sensorData.value = {
     ...sensorData.value,

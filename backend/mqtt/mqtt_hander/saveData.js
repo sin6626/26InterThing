@@ -47,8 +47,9 @@ exports.saveSensorData = (topic, payload, callback) => {
       params.push(data[item.p_name])
     })
 
-    params.push(data['c_time'])
-    params.push(data['online'])
+    const recordTime = data['c_time'] || data['time'] || new Date()
+    params.push(recordTime)
+    params.push(data['online'] || '实时数据')
 
     // VStatus / vstatus 都兼容，缺失时按正常状态 0 处理。
     const vstatusValue = data['VStatus'] ?? data['vstatus'] ?? 0
@@ -101,8 +102,9 @@ exports.savebehaviorData = (topic, payload, callback) => {
       params.push(data[item.p_name])
     })
 
-    params.push(data['c_time'])
-    params.push(data['online'])
+    const recordTime = data['c_time'] || data['time'] || new Date()
+    params.push(recordTime)
+    params.push(data['online'] || '实时数据')
 
     const allColumns = ['d_no', ...fieldNames, 'c_time', 'online']
     const placeholders = allColumns.map(() => '?').join(', ')
@@ -144,7 +146,7 @@ exports.saveErrorData = (topic, payload, callback) => {
 
       const params = []
       params.push(data.d_no)
-      params.push(normalizedData['c_time'])
+      params.push(normalizedData['c_time'] || normalizedData['time'] || new Date())
       params.push(normalizedData['e_msg'])
       params.push(normalizedData['e_no'])
       params.push(normalizedData['type'])

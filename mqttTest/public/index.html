@@ -292,6 +292,7 @@
       const DEFAULT_JSON = {
         "d_no": "e46488d793284429",
         "time": "2026-09-05 20:47:41",
+        "c_time": "2026-09-05 20:47:41",
         "heat_Y1": 0,
         "water_Y2": 0,
         "pressure": 0,
@@ -374,7 +375,9 @@
         try {
           const obj = JSON.parse(raw)
           if (typeof obj === 'object' && obj !== null) {
-            obj.time = getNowTimeStr()
+            const now = getNowTimeStr()
+            obj.time = now
+            obj.c_time = now
             // 同步刷新到输入框
             $('payloadInput').value = JSON.stringify(obj, null, 2)
             return obj
