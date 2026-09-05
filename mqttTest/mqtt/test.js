@@ -16,6 +16,7 @@ const state = {
     running: false,
     topic: 'device/sensor',
     payload: '',
+    rawPayload: null,
     intervalMs: 1000,
     count: 0,
     lastSentTime: null,
@@ -23,6 +24,31 @@ const state = {
     timer: null,
   },
   logs: [], // 最近 30 条发送记录
+}
+
+const formatNowTimeString = () => {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
+const preparePayload = (rawPayload) => {
+  if (typeof rawPayload === 'object' && rawPayload !== null) {
+    return JSON.stringify({
+      ...rawPayload,
+      time: formatNowTimeString(),
+    })
+  }
+  if (typeof rawPayload === 'string') {
+    try {
+      const parsed = JSON.parse(rawPayload)
+      if (typeof parsed === 'object' && parsed !== null) {
+        parsed.time = formatNowTimeString()
+        return JSON.stringify(parsed)
+      }
+    } catch {}
+  }
+  return String(rawPayload ?? '')
 }
 
 const addLog = (type, topic, content, success = true) => {
@@ -77,9 +103,7 @@ const publish = (topic, payload) => {
       return reject(err)
     }
 
-    const payloadStr = typeof payload === 'object' && payload !== null
-      ? JSON.stringify(payload)
-      : String(payload ?? '')
+    const payloadStr = preparePayload(payload)
 
     mqttClient.publish(cleanTopic, payloadStr, { qos: 0, retain: false }, (err) => {
       if (err) {
@@ -107,18 +131,19 @@ const startAutoPublish = ({ topic, payload, intervalMs = 1000 }) => {
   if (!cleanTopic) throw new Error('自动发送失败：主题(Topic)不能为空')
 
   const interval = Math.max(100, Number(intervalMs) || 1000)
-  const payloadStr = typeof payload === 'object' && payload !== null
-    ? JSON.stringify(payload)
-    : String(payload ?? '')
 
   state.autoPublish.running = true
   state.autoPublish.topic = cleanTopic
-  state.autoPublish.payload = payloadStr
+  state.autoPublish.rawPayload = payload
+  state.autoPublish.payload = typeof payload === 'object' && payload !== null ? JSON.stringify(payload) : String(payload ?? '')
   state.autoPublish.intervalMs = interval
   state.autoPublish.count = 0
   state.autoPublish.lastError = null
 
   const sendTick = () => {
+    const payloadStr = preparePayload(state.autoPublish.rawPayload)
+    state.autoPublish.payload = payloadStr
+
     if (!state.connected || !mqttClient) {
       state.autoPublish.lastError = 'MQTT 未连接'
       addLog('自动发送', cleanTopic, payloadStr, false)
@@ -185,4 +210,5 @@ module.exports = {
   reconnectMqtt,
   getStatus,
   clearLogs,
+  formatNowTimeString,
 }

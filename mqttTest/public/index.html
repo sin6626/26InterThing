@@ -100,8 +100,9 @@
       input:focus, textarea:focus { border-color: #58a6ff; }
       textarea {
         font-family: Consolas, Monaco, "Courier New", monospace;
-        min-height: 120px;
+        min-height: 180px;
         resize: vertical;
+        line-height: 1.45;
       }
       .row {
         display: flex;
@@ -249,13 +250,13 @@
         <div class="form-group">
           <div style="display:flex; justify-content: space-between; align-items: center;">
             <label>发送数据 (Payload / JSON / 文本)</label>
-            <button id="formatBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 11px;">格式化 JSON</button>
+            <div style="display:flex; gap: 6px;">
+              <button id="saveJsonBtn" class="btn btn-secondary" style="padding: 2px 10px; font-size: 11px;">保存 JSON 格式</button>
+              <button id="resetJsonBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 11px;">恢复默认</button>
+              <button id="formatBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 11px;">格式化 JSON</button>
+            </div>
           </div>
-          <textarea id="payloadInput" placeholder="输入要发送的数据 (支持字符串或 JSON)">{
-  "d_no": "202111",
-  "temp_out": 28.5,
-  "flow_rate": 0.8
-}</textarea>
+          <textarea id="payloadInput" placeholder="输入要发送的数据 (支持字符串或 JSON)"></textarea>
         </div>
 
         <div class="row">
@@ -287,7 +288,70 @@
     <script>
       const $ = (id) => document.getElementById(id)
 
+      // 默认 JSON 数据
+      const DEFAULT_JSON = {
+        "d_no": "e46488d793284429",
+        "time": "2026-09-05 20:47:41",
+        "heat_Y1": 0,
+        "water_Y2": 0,
+        "pressure": 0,
+        "temp_out": 28.7,
+        "temp_in": 31.2,
+        "flow_rate": 0
+      }
+
+      // 获取当前格式化时间字符串 YYYY-MM-DD HH:mm:ss
+      const getNowTimeStr = () => {
+        const d = new Date()
+        const p = (n) => String(n).padStart(2, '0')
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+      }
+
+      // 初始化页面数据
+      const initPayloadInput = () => {
+        const savedJson = localStorage.getItem('mqtt_test_saved_json')
+        const savedTopic = localStorage.getItem('mqtt_test_saved_topic')
+        if (savedTopic) {
+          $('topicInput').value = savedTopic
+        }
+        if (savedJson) {
+          $('payloadInput').value = savedJson
+        } else {
+          $('payloadInput').value = JSON.stringify(DEFAULT_JSON, null, 2)
+        }
+      }
+
+      initPayloadInput()
+
       let isAutoRunning = false
+
+      // 保存 JSON 格式到 localStorage
+      $('saveJsonBtn').onclick = () => {
+        const content = $('payloadInput').value.trim()
+        const topic = $('topicInput').value.trim()
+        localStorage.setItem('mqtt_test_saved_json', content)
+        if (topic) localStorage.setItem('mqtt_test_saved_topic', topic)
+
+        const btn = $('saveJsonBtn')
+        const oldText = btn.textContent
+        btn.textContent = '已保存 ✔'
+        btn.style.borderColor = '#3fb950'
+        btn.style.color = '#3fb950'
+        setTimeout(() => {
+          btn.textContent = oldText
+          btn.style.borderColor = ''
+          btn.style.color = ''
+        }, 1500)
+      }
+
+      // 恢复默认 JSON
+      $('resetJsonBtn').onclick = () => {
+        if (confirm('确定要恢复为默认 JSON 数据吗？')) {
+          const fresh = { ...DEFAULT_JSON, time: getNowTimeStr() }
+          $('payloadInput').value = JSON.stringify(fresh, null, 2)
+          localStorage.removeItem('mqtt_test_saved_json')
+        }
+      }
 
       // 切换 Broker 配置显示
       $('toggleConfigBtn').onclick = () => {
@@ -304,11 +368,18 @@
         }
       }
 
-      // 获取 Payload 内容
-      const getPayloadData = () => {
+      // 获取 Payload 内容，并在是 JSON 时自动注入/更新当前时间的 time 字段
+      const getPayloadDataWithCurrentTime = () => {
         const raw = $('payloadInput').value.trim()
         try {
-          return JSON.parse(raw)
+          const obj = JSON.parse(raw)
+          if (typeof obj === 'object' && obj !== null) {
+            obj.time = getNowTimeStr()
+            // 同步刷新到输入框
+            $('payloadInput').value = JSON.stringify(obj, null, 2)
+            return obj
+          }
+          return raw
         } catch {
           return raw
         }
@@ -318,7 +389,7 @@
       $('sendBtn').onclick = async () => {
         const topic = $('topicInput').value.trim()
         if (!topic) return alert('请输入目标主题')
-        const payload = getPayloadData()
+        const payload = getPayloadDataWithCurrentTime()
 
         try {
           $('sendBtn').disabled = true
@@ -342,7 +413,7 @@
         if (!isAutoRunning) {
           const topic = $('topicInput').value.trim()
           if (!topic) return alert('请输入目标主题')
-          const payload = getPayloadData()
+          const payload = getPayloadDataWithCurrentTime()
           const intervalMs = Number($('intervalInput').value) || 1000
 
           try {
