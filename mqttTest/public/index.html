@@ -3,872 +3,473 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MQTT 设备端仿真控制台</title>
+    <title>MQTT 测试发包工具</title>
     <style>
       :root {
-        color-scheme: dark;
-        --bg: #0b1020;
-        --panel: #131b35;
-        --panel-soft: #1c274c;
-        --text: #eef2ff;
-        --muted: #9aa4c7;
-        --accent: #5eead4;
-        --accent-2: #60a5fa;
-        --accent-purple: #c084fc;
-        --danger: #fb7185;
-        --warning: #fbbf24;
-        --success: #34d399;
-        --border: rgba(255, 255, 255, 0.08);
+        --bg: #0d1117;
+        --card: #161b22;
+        --card-border: #30363d;
+        --text: #c9d1d9;
+        --text-heading: #f0f6fc;
+        --accent: #238636;
+        --accent-hover: #2ea043;
+        --danger: #da3633;
+        --danger-hover: #b62324;
+        --blue: #1f6feb;
+        --blue-hover: #388bfd;
+        --muted: #8b949e;
       }
-
-      * { box-sizing: border-box; }
-
+      * { box-sizing: border-box; margin: 0; padding: 0; }
       body {
-        margin: 0;
-        font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-        background:
-          radial-gradient(circle at top right, rgba(96, 165, 250, 0.16), transparent 30%),
-          radial-gradient(circle at top left, rgba(94, 234, 212, 0.12), transparent 32%),
-          var(--bg);
+        background: var(--bg);
         color: var(--text);
-        min-height: 100vh;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        padding: 24px 16px;
+        display: flex;
+        justify-content: center;
       }
-
-      .page { max-width: 1360px; margin: 0 auto; padding: 20px; }
-
-      /* Hero & 顶部配置 */
-      .hero {
-        display: flex; justify-content: space-between; gap: 16px;
-        align-items: center; margin-bottom: 16px; flex-wrap: wrap;
-      }
-
-      .hero h1 { margin: 0 0 4px; font-size: 24px; font-weight: 700; }
-      .hero p { margin: 0; color: var(--muted); font-size: 13px; }
-
-      .top-controls {
-        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-      }
-
-      .status-chip {
-        padding: 8px 14px; border-radius: 999px;
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid var(--border); font-size: 13px; white-space: nowrap;
-        display: flex; align-items: center; gap: 6px;
-      }
-      .status-chip.online { background: rgba(52, 211, 153, 0.16); border-color: rgba(52, 211, 153, 0.45); color: #34d399; }
-      .status-chip.offline { background: rgba(251, 113, 133, 0.15); border-color: rgba(251, 113, 133, 0.35); color: #fb7185; }
-
-      .broker-drawer {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 14px 18px;
-        margin-bottom: 16px;
-        display: none;
-      }
-      .broker-drawer.open { display: block; }
-
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(12, 1fr);
+      .container {
+        width: 100%;
+        max-width: 900px;
+        display: flex;
+        flex-direction: column;
         gap: 16px;
       }
-
-      .col-6 { grid-column: span 6; }
-      .col-12 { grid-column: span 12; }
-      .col-4 { grid-column: span 4; }
-      .col-8 { grid-column: span 8; }
-
-      @media (max-width: 1024px) {
-        .col-6, .col-4, .col-8 { grid-column: span 12; }
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        border-radius: 8px;
       }
-
-      .panel {
-        background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 16px 18px;
-        box-shadow: 0 16px 36px -24px rgba(0, 0, 0, 0.8);
-      }
-
-      .panel-header {
-        display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;
-      }
-      .panel-header h2 { margin: 0; font-size: 16px; font-weight: 700; }
-      .panel-header .badge {
-        font-size: 11px; padding: 2px 8px; border-radius: 6px; background: rgba(96, 165, 250, 0.15); color: var(--accent-2);
-      }
-
-      .stack { display: grid; gap: 12px; }
-      .row { display: flex; gap: 10px; align-items: center; }
-      .row > * { flex: 1; }
-
-      label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
-
-      input, textarea, select {
-        width: 100%;
-        border: 1px solid var(--border);
-        background: var(--panel-soft);
-        color: var(--text);
-        border-radius: 10px;
-        padding: 8px 12px;
-        font: inherit;
-        font-size: 13px;
-      }
-
-      input[type="range"] {
-        padding: 0; height: 6px; accent-color: var(--accent);
-      }
-
-      button {
-        border: 0; border-radius: 10px;
-        padding: 8px 14px;
-        font: inherit; font-size: 13px; color: #08111f;
-        background: linear-gradient(135deg, var(--accent), var(--accent-2));
-        cursor: pointer; font-weight: 600;
-        transition: transform 0.1s ease, filter 0.15s ease, opacity 0.15s ease;
-      }
-      button:hover { filter: brightness(1.06); }
-      button:active { transform: scale(0.98); }
-
-      button.secondary {
-        color: var(--text);
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid var(--border);
-      }
-      button.danger {
-        color: white;
-        background: linear-gradient(135deg, #fb7185, #ef4444);
-      }
-      button.warning {
-        color: #08111f;
-        background: linear-gradient(135deg, #fbbf24, #f59e0b);
-      }
-      button.purple {
-        color: white;
-        background: linear-gradient(135deg, #c084fc, #a855f7);
-      }
-      button.success {
-        color: #08111f;
-        background: linear-gradient(135deg, #34d399, #10b981);
-      }
-
-      /* 物理滑块仪表盘项 */
-      .gauge-item {
-        background: rgba(255, 255, 255, 0.025);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 10px 14px;
-        display: grid; gap: 6px;
-      }
-      .gauge-title {
-        display: flex; justify-content: space-between; font-size: 12px; color: var(--muted);
-      }
-      .gauge-val {
-        font-size: 15px; font-weight: 700; color: var(--accent);
-      }
-
-      /* 场景卡片按钮网格 */
-      .scenario-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-        gap: 10px;
-      }
-      .scenario-btn {
-        padding: 12px 10px; text-align: left; border-radius: 12px; display: flex; flex-direction: column; gap: 4px;
-      }
-      .scenario-btn .title { font-weight: 700; font-size: 13px; }
-      .scenario-btn .desc { font-size: 11px; opacity: 0.8; font-weight: normal; }
-
-      /* 下发指令流水列表 */
-      .direct-list {
-        max-height: 240px; overflow-y: auto; display: grid; gap: 8px;
-      }
-      .direct-item {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 8px 12px;
+      .header h1 { font-size: 18px; color: var(--text-heading); }
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 20px;
         font-size: 12px;
+        font-weight: 500;
+        background: #21262d;
       }
-      .direct-header {
-        display: flex; justify-content: space-between; margin-bottom: 4px; color: var(--muted);
+      .dot { width: 8px; height: 8px; border-radius: 50%; }
+      .online { color: #3fb950; }
+      .online .dot { background: #3fb950; box-shadow: 0 0 8px #3fb950; }
+      .offline { color: #f85149; }
+      .offline .dot { background: #f85149; }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        border-radius: 8px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
       }
-      .direct-summary { font-weight: 600; color: var(--accent-2); }
-      .direct-raw {
-        background: #080f20; padding: 4px 8px; border-radius: 6px; font-family: monospace; font-size: 11px; color: #a5b4fc; word-break: break-all; margin-top: 4px;
+      .card-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-heading);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .form-group label {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      input, textarea {
+        background: #0d1117;
+        border: 1px solid var(--card-border);
+        color: var(--text);
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      input:focus, textarea:focus { border-color: #58a6ff; }
+      textarea {
+        font-family: Consolas, Monaco, "Courier New", monospace;
+        min-height: 120px;
+        resize: vertical;
+      }
+      .row {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 500;
+        border-radius: 6px;
+        border: none;
+        cursor: pointer;
+        transition: 0.15s ease;
+        color: #fff;
+      }
+      .btn-blue { background: var(--blue); }
+      .btn-blue:hover { background: var(--blue-hover); }
+      .btn-green { background: var(--accent); }
+      .btn-green:hover { background: var(--accent-hover); }
+      .btn-danger { background: var(--danger); }
+      .btn-danger:hover { background: var(--danger-hover); }
+      .btn-secondary {
+        background: #21262d;
+        border: 1px solid var(--card-border);
+        color: var(--text);
+      }
+      .btn-secondary:hover { background: #30363d; }
+      .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+      .auto-panel {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        background: #10141b;
+        border: 1px solid var(--card-border);
+        border-radius: 6px;
+        flex-wrap: wrap;
+      }
+      .auto-info {
+        font-size: 12px;
+        color: var(--muted);
+        margin-left: auto;
       }
 
-      pre {
-        margin: 0; white-space: pre-wrap; word-break: break-word;
-        background: #080f20; border: 1px solid var(--border); border-radius: 12px;
-        padding: 10px; font-size: 12px; min-height: 120px; max-height: 260px; overflow: auto; color: #cdd6f4;
+      .log-box {
+        background: #0d1117;
+        border: 1px solid var(--card-border);
+        border-radius: 6px;
+        height: 220px;
+        overflow-y: auto;
+        padding: 8px;
+        font-family: Consolas, monospace;
+        font-size: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .log-item {
+        display: flex;
+        gap: 8px;
+        padding: 4px 6px;
+        border-radius: 4px;
+        border-bottom: 1px solid #1c2128;
+      }
+      .log-time { color: var(--muted); }
+      .log-tag { font-weight: bold; }
+      .log-success { color: #3fb950; }
+      .log-fail { color: #f85149; }
+      .log-topic { color: #58a6ff; }
+      .log-body {
+        color: #8b949e;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
       }
 
-      .feedback-banner {
-        padding: 10px 14px; border-radius: 12px; border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.04); font-size: 13px; color: var(--muted); margin-bottom: 16px;
-        display: flex; justify-content: space-between; align-items: center;
+      .broker-config {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 8px;
       }
-      .feedback-banner.success { background: rgba(52, 211, 153, 0.12); border-color: rgba(52, 211, 153, 0.35); color: #dffcf3; }
-      .feedback-banner.error { background: rgba(251, 113, 133, 0.12); border-color: rgba(251, 113, 133, 0.35); color: #ffe2e7; }
-
-      .field-row {
-        display: flex; gap: 8px; align-items: center; background: rgba(255,255,255,0.02);
-        border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px;
-      }
-      .del-field {
-        flex: 0 0 26px; height: 26px; padding: 0; border-radius: 6px; background: rgba(251,113,133,0.2); color: var(--danger);
-      }
+      .collapsible { display: none; }
+      .collapsible.show { display: grid; }
     </style>
   </head>
   <body>
-    <div class="page">
-      <!-- 顶部状态与快速控制 -->
-      <div class="hero">
+    <div class="container">
+      <!-- 顶部 Header -->
+      <div class="header">
         <div>
-          <h1>MQTT 设备端仿真控制台</h1>
-          <p>对接 2026 物联网竞赛应用层 · 水循环闭环物理仿真 & 一键安全联锁场景</p>
+          <h1>MQTT 测试发包工具</h1>
         </div>
-        <div class="top-controls">
-          <div class="status-chip offline" id="status-chip">
-            <span class="dot">●</span>
-            <span id="status-text">连接检测中...</span>
+        <div style="display:flex; align-items:center; gap: 10px;">
+          <div id="statusBadge" class="status-badge offline">
+            <span class="dot"></span>
+            <span id="statusText">连接中...</span>
           </div>
-
-          <label style="flex-direction:row; align-items:center; gap:6px; margin:0;">
-            <span style="font-size:12px; white-space:nowrap;">模拟设备号:</span>
-            <select id="deviceSelect" style="width: 220px; padding: 6px 10px;">
-              <option value="e46488d793284429" selected>e46488d793284429 (水循环装置)</option>
-              <option value="custom">自定义设备号</option>
-            </select>
-          </label>
-          <input id="customDeviceInput" placeholder="输入设备号" style="width: 140px; display: none; padding: 6px 10px;" />
-
-          <button class="secondary" id="toggleBrokerBtn">⚙️ Broker 配置</button>
+          <button id="toggleConfigBtn" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px;">Broker 设置</button>
         </div>
       </div>
 
-      <!-- Broker 配置折叠面板 -->
-      <div class="broker-drawer" id="brokerDrawer">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-          <strong style="font-size:14px;">MQTT Broker 连接设置</strong>
-          <span style="font-size:12px; color:var(--muted);">修改后点击【保存并立即重连】</span>
+      <!-- Broker 配置（可折叠） -->
+      <div id="configDrawer" class="card collapsible">
+        <div class="card-title">Broker 连接配置</div>
+        <div class="broker-config">
+          <div class="form-group">
+            <label>Host</label>
+            <input id="cfgHost" value="localhost" />
+          </div>
+          <div class="form-group">
+            <label>Port</label>
+            <input id="cfgPort" type="number" value="1883" />
+          </div>
+          <div class="form-group">
+            <label>Username</label>
+            <input id="cfgUser" value="sin" />
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input id="cfgPass" type="password" value="1234" />
+          </div>
+          <div class="form-group">
+            <label>Client ID</label>
+            <input id="cfgClientId" value="mqtt_test_sender" />
+          </div>
         </div>
+        <div style="display:flex; justify-content: flex-end;">
+          <button id="saveConfigBtn" class="btn btn-secondary">保存并重连</button>
+        </div>
+      </div>
+
+      <!-- 核心发送卡片 -->
+      <div class="card">
+        <div class="form-group">
+          <label>目标主题 (Topic)</label>
+          <input id="topicInput" value="device/sensor" placeholder="请输入 MQTT 主题，例如 device/sensor" />
+        </div>
+
+        <div class="form-group">
+          <div style="display:flex; justify-content: space-between; align-items: center;">
+            <label>发送数据 (Payload / JSON / 文本)</label>
+            <button id="formatBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 11px;">格式化 JSON</button>
+          </div>
+          <textarea id="payloadInput" placeholder="输入要发送的数据 (支持字符串或 JSON)">{
+  "d_no": "202111",
+  "temp_out": 28.5,
+  "flow_rate": 0.8
+}</textarea>
+        </div>
+
         <div class="row">
-          <label>Host<input id="brokerHost" value="localhost" /></label>
-          <label>Port<input id="brokerPort" type="number" value="1883" /></label>
-          <label>Username<input id="brokerUser" value="sin" /></label>
-          <label>Password<input id="brokerPass" value="1234" /></label>
-          <label>ClientId<input id="brokerClientId" value="device_simulator_e46488d7" /></label>
-          <div style="display:flex; align-items:flex-end;">
-            <button id="saveBrokerBtn" style="height:36px; width:100%;">保存并重连</button>
+          <button id="sendBtn" class="btn btn-blue" style="min-width: 120px;">立即发送</button>
+        </div>
+
+        <!-- 自动发送控制 -->
+        <div class="auto-panel">
+          <span style="font-size: 13px; font-weight: 500;">后台自动发送：</span>
+          <div class="row" style="gap: 6px;">
+            <label style="font-size: 12px; color: var(--muted);">间隔(ms):</label>
+            <input id="intervalInput" type="number" value="1000" min="100" style="width: 90px; padding: 4px 8px;" />
           </div>
+          <button id="autoToggleBtn" class="btn btn-green">开启自动发送</button>
+          <div id="autoStatus" class="auto-info">未运行</div>
         </div>
       </div>
 
-      <!-- 状态与反馈条 -->
-      <div class="feedback-banner" id="feedback-banner">
-        <span id="feedback-text">控制台就绪，可随时调节物理参数或触发测试场景。</span>
-        <span id="feedback-time" style="font-size:11px; opacity:0.7;"></span>
-      </div>
-
-      <!-- 主网格 -->
-      <div class="grid">
-        <!-- 卡片 1：水循环物理环境仿真控制 -->
-        <section class="panel col-6">
-          <div class="panel-header">
-            <h2>💧 水循环物理仿真与连续上报</h2>
-            <span class="badge" id="autoSensorBadge">自动上报: 关闭</span>
-          </div>
-
-          <div class="stack">
-            <!-- 开关状态 -->
-            <div class="row">
-              <div class="gauge-item">
-                <div class="gauge-title">
-                  <span>水泵状态 (water_Y2)</span>
-                  <span id="pumpStatusText" style="font-weight:700; color:#34d399;">开启 (1)</span>
-                </div>
-                <button class="secondary" id="togglePumpBtn" style="padding:6px;">切换水泵状态</button>
-              </div>
-              <div class="gauge-item">
-                <div class="gauge-title">
-                  <span>加热器状态 (heat_Y1)</span>
-                  <span id="heaterStatusText" style="font-weight:700; color:#9aa4c7;">关闭 (0)</span>
-                </div>
-                <button class="secondary" id="toggleHeaterBtn" style="padding:6px;">切换加热状态</button>
-              </div>
-            </div>
-
-            <!-- 滑块仪表 -->
-            <div class="gauge-item">
-              <div class="gauge-title">
-                <span>出水温度 (temp_out)</span>
-                <span class="gauge-val" id="tempOutVal">28.50 ℃</span>
-              </div>
-              <input type="range" id="tempOutRange" min="15" max="55" step="0.1" value="28.5" />
-            </div>
-
-            <div class="gauge-item">
-              <div class="gauge-title">
-                <span>进水温度 (temp_in)</span>
-                <span class="gauge-val" id="tempInVal">25.00 ℃</span>
-              </div>
-              <input type="range" id="tempInRange" min="15" max="45" step="0.1" value="25.0" />
-            </div>
-
-            <div class="row">
-              <div class="gauge-item">
-                <div class="gauge-title">
-                  <span>水流速率 (flow_rate)</span>
-                  <span class="gauge-val" id="flowVal">0.80 L/min</span>
-                </div>
-                <input type="range" id="flowRange" min="0" max="2.0" step="0.05" value="0.8" />
-              </div>
-              <div class="gauge-item">
-                <div class="gauge-title">
-                  <span>管路压力 (pressure)</span>
-                  <span class="gauge-val" id="pressureVal">85.0 kPa</span>
-                </div>
-                <input type="range" id="pressureRange" min="0" max="180" step="1" value="85" />
-              </div>
-            </div>
-
-            <!-- 自动连续上报控制 -->
-            <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:12px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-              <div style="display:flex; align-items:center; gap:10px;">
-                <label style="flex-direction:row; align-items:center; gap:6px; margin:0;">
-                  <span>周期:</span>
-                  <select id="autoIntervalSelect" style="width:90px; padding:4px 8px;">
-                    <option value="500">500ms</option>
-                    <option value="1000" selected>1000ms</option>
-                    <option value="2000">2000ms</option>
-                    <option value="3000">3000ms</option>
-                  </select>
-                </label>
-                <label style="flex-direction:row; align-items:center; gap:6px; margin:0;">
-                  <input type="checkbox" id="jitterCheck" checked style="width:auto;" />
-                  <span>微小自然波动</span>
-                </label>
-              </div>
-
-              <div style="display:flex; gap:8px;">
-                <button id="toggleAutoSensorBtn" class="success">开启连续自动上报</button>
-                <button id="sendSingleSensorBtn" class="secondary">单发一次</button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- 卡片 2：一键测试场景宏（Macro） -->
-        <section class="panel col-6">
-          <div class="panel-header">
-            <h2>⚡ 一键安全联锁与测试场景宏</h2>
-            <span class="badge">快速自测</span>
-          </div>
-
-          <div class="stack">
-            <p style="margin:0; font-size:12px; color:var(--muted);">点击以下按钮，模拟器将自动构造异常数据流，验证后端的安全保护逻辑：</p>
-
-            <div class="scenario-grid">
-              <!-- 一键恢复正常 -->
-              <button class="scenario-btn success" data-scenario="reset_normal" style="grid-column: 1 / -1;">
-                <span class="title">🟢 一键恢复物理常态 (正常无故障环境)</span>
-                <span class="desc">将水温重置为28.5℃、流量0.8L/min、压力85kPa，发送正常心跳，供前台复位验证</span>
-              </button>
-
-              <!-- 水循环五重保护 -->
-              <button class="scenario-btn warning" data-scenario="flow_timeout">
-                <span class="title">🚨 建流超时 (5s)</span>
-                <span class="desc">开泵流量=0持续5秒，验证停泵报错</span>
-              </button>
-
-              <button class="scenario-btn danger" data-scenario="flow_loss">
-                <span class="title">🔥 失流干烧 (3s)</span>
-                <span class="desc">加热中流量降至0.1，验证切断加热</span>
-              </button>
-
-              <button class="scenario-btn danger" data-scenario="over_temp">
-                <span class="title">🌡️ 超温告警 (46.5℃)</span>
-                <span class="desc">超出45℃上限，验证关加热保泵散热</span>
-              </button>
-
-              <button class="scenario-btn danger" data-scenario="over_pressure">
-                <span class="title">💥 超压急停 (160kPa)</span>
-                <span class="desc">超出150kPa上限，验证停泵关加热</span>
-              </button>
-
-              <button class="scenario-btn purple" data-scenario="sensor_pause">
-                <span class="title">⏳ 传感器中断 (6s)</span>
-                <span class="desc">暂停数据上报，验证看门狗退出</span>
-              </button>
-
-              <!-- 通信生命周期 -->
-              <button class="scenario-btn secondary" data-scenario="offline">
-                <span class="title">🔌 断网离线 (7s)</span>
-                <span class="desc">暂停心跳7秒，验证离线检测</span>
-              </button>
-
-              <button class="scenario-btn success" data-scenario="online_recover">
-                <span class="title">📶 恢复上线心跳</span>
-                <span class="desc">重发心跳，验证校时与离线指令下发</span>
-              </button>
-
-              <button class="scenario-btn secondary" id="sendQuickTimeReq">
-                <span class="title">🕒 发送校时请求</span>
-                <span class="desc">向 device/timeRequest 发送请求</span>
-              </button>
-            </div>
-
-            <!-- 自动心跳保持 -->
-            <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:12px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center;">
-              <span style="font-size:12px;">自动心跳 (device/heartbeat, 3s/包):</span>
-              <div style="display:flex; gap:8px;">
-                <button id="toggleAutoHeartbeatBtn" class="secondary" style="padding:4px 12px;">启动自动心跳</button>
-                <button id="sendSingleHeartbeatBtn" class="secondary" style="padding:4px 12px;">单发心跳</button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- 卡片 3：下发指令流水与时间同步实时接收面板 -->
-        <section class="panel col-6">
-          <div class="panel-header">
-            <h2>📥 收到的下发指令流水 (device/direct)</h2>
-            <div style="display:flex; gap:6px;">
-              <button class="secondary" id="refreshDirectBtn" style="padding:2px 8px; font-size:11px;">刷新</button>
-              <button class="secondary" id="clearDirectBtn" style="padding:2px 8px; font-size:11px;">清空</button>
-            </div>
-          </div>
-
-          <div class="direct-list" id="directListContainer">
-            <div style="color:var(--muted); font-size:12px; padding:10px; text-align:center;">暂无下发指令记录</div>
-          </div>
-
-          <div style="margin-top:12px; border-top:1px solid var(--border); padding-top:10px;">
-            <div style="font-size:12px; color:var(--muted); margin-bottom:4px;">最新时间同步 (device/updateTime):</div>
-            <pre id="latestTimeSyncPre" style="min-height:40px; max-height:80px;">暂无</pre>
-          </div>
-        </section>
-
-        <!-- 卡片 4：手动调试与自由字段单发 -->
-        <section class="panel col-6">
-          <div class="panel-header">
-            <h2>🛠️ 手动单发调试 (行为 / 错误 / 自定义)</h2>
-            <select id="manualTypeSelect" style="width:120px; padding:2px 6px; font-size:11px;">
-              <option value="behavior">行为数据</option>
-              <option value="error">错误数据</option>
-              <option value="direct_report">指令上报</option>
-            </select>
-          </div>
-
-          <!-- 行为面板 -->
-          <div id="behaviorBox" class="stack">
-            <label>text_field<input id="behaviorText" value="水泵正常运行" /></label>
-            <label>pid (卡号)<input id="behaviorPid" value="CARD_8899A" /></label>
-            <button id="sendManualBehaviorBtn">发送行为数据 (device/behavior)</button>
-          </div>
-
-          <!-- 错误面板 -->
-          <div id="errorBox" class="stack" style="display:none;">
-            <div class="row">
-              <label>e_no<input id="manualErrorNo" value="E201" /></label>
-              <label>type<input id="manualErrorType" value="6" /></label>
-            </div>
-            <label>e_msg<input id="manualErrorMsg" value="管路压力过高" /></label>
-            <button class="danger" id="sendManualErrorBtn">发送错误信息 (device/error)</button>
-          </div>
-
-          <!-- 指令上报面板 -->
-          <div id="directReportBox" class="stack" style="display:none;">
-            <div class="row">
-              <label>config_id<input id="reportConfigId" type="number" value="7" /></label>
-              <label>value<input id="reportValue" value="off" /></label>
-            </div>
-            <button id="sendManualReportBtn">设备端指令上报 (device/direct)</button>
-          </div>
-        </section>
-
-        <!-- 卡片 5：响应日志 -->
-        <section class="panel col-12">
-          <div class="panel-header">
-            <h2>📜 模拟器执行日志</h2>
-            <button class="secondary" id="clearLogBtn" style="padding:2px 8px; font-size:11px;">清空日志</button>
-          </div>
-          <pre id="outputPre"></pre>
-        </section>
+      <!-- 发送记录与日志 -->
+      <div class="card">
+        <div class="card-title">
+          <span>发送日志</span>
+          <button id="clearLogBtn" class="btn btn-secondary" style="padding: 2px 8px; font-size: 11px;">清空日志</button>
+        </div>
+        <div id="logBox" class="log-box"></div>
       </div>
     </div>
 
     <script>
-      // ========== 基础工具与状态 ==========
-      const outputPre = document.getElementById('outputPre');
-      const statusChip = document.getElementById('status-chip');
-      const statusText = document.getElementById('status-text');
-      const feedbackBanner = document.getElementById('feedback-banner');
-      const feedbackText = document.getElementById('feedback-text');
-      const feedbackTime = document.getElementById('feedback-time');
+      const $ = (id) => document.getElementById(id)
 
-      let currentDeviceId = 'e46488d793284429';
-      let autoSensorRunning = false;
-      let autoHeartbeatRunning = false;
+      let isAutoRunning = false
 
-      function log(title, data) {
-        const time = new Date().toLocaleTimeString();
-        outputPre.textContent =
-          `[${time}] ${title}\n${typeof data === 'string' ? data : JSON.stringify(data, null, 2)}\n\n` +
-          outputPre.textContent;
+      // 切换 Broker 配置显示
+      $('toggleConfigBtn').onclick = () => {
+        $('configDrawer').classList.toggle('show')
       }
 
-      function setFeedback(state, text) {
-        feedbackBanner.className = `feedback-banner ${state}`;
-        feedbackText.textContent = text;
-        feedbackTime.textContent = new Date().toLocaleTimeString();
-      }
-
-      async function req(url, options = {}) {
-        const res = await fetch(url, {
-          headers: { 'Content-Type': 'application/json' },
-          ...options,
-        });
-        const data = await res.json();
-        if (!res.ok || data.status !== 0) {
-          throw new Error(data.message || `HTTP ${res.status}`);
-        }
-        return data;
-      }
-
-      async function post(url, body) {
-        return req(url, { method: 'POST', body: JSON.stringify(body ?? {}) });
-      }
-
-      // ========== 状态刷新 ==========
-      async function refreshState() {
+      // 格式化 JSON
+      $('formatBtn').onclick = () => {
         try {
-          const res = await req('/api/status');
-          const data = res.data;
+          const obj = JSON.parse($('payloadInput').value)
+          $('payloadInput').value = JSON.stringify(obj, null, 2)
+        } catch (e) {
+          alert('数据不是有效 JSON 格式')
+        }
+      }
 
-          // 连接状态
-          if (data.mqttConnected) {
-            statusChip.className = 'status-chip online';
-            statusText.textContent = `MQTT 在线 · ${data.mqttOptions.host}:${data.mqttOptions.port}`;
-          } else {
-            statusChip.className = 'status-chip offline';
-            statusText.textContent = 'MQTT 离线';
-          }
+      // 获取 Payload 内容
+      const getPayloadData = () => {
+        const raw = $('payloadInput').value.trim()
+        try {
+          return JSON.parse(raw)
+        } catch {
+          return raw
+        }
+      }
 
-          // 设备号
-          currentDeviceId = data.deviceId;
+      // 单次发送
+      $('sendBtn').onclick = async () => {
+        const topic = $('topicInput').value.trim()
+        if (!topic) return alert('请输入目标主题')
+        const payload = getPayloadData()
 
-          // 物理滑块状态
-          const p = data.physics;
-          document.getElementById('tempOutVal').textContent = `${Number(p.temp_out).toFixed(2)} ℃`;
-          document.getElementById('tempOutRange').value = p.temp_out;
-          document.getElementById('tempInVal').textContent = `${Number(p.temp_in).toFixed(2)} ℃`;
-          document.getElementById('tempInRange').value = p.temp_in;
-          document.getElementById('flowVal').textContent = `${Number(p.flow_rate).toFixed(2)} L/min`;
-          document.getElementById('flowRange').value = p.flow_rate;
-          document.getElementById('pressureVal').textContent = `${Number(p.pressure).toFixed(1)} kPa`;
-          document.getElementById('pressureRange').value = p.pressure;
-
-          // 开关
-          const pumpOn = Number(p.water_Y2) === 1;
-          document.getElementById('pumpStatusText').textContent = pumpOn ? '开启 (1)' : '关闭 (0)';
-          document.getElementById('pumpStatusText').style.color = pumpOn ? '#34d399' : '#9aa4c7';
-
-          const heaterOn = Number(p.heat_Y1) === 1;
-          document.getElementById('heaterStatusText').textContent = heaterOn ? '开启 (1)' : '关闭 (0)';
-          document.getElementById('heaterStatusText').style.color = heaterOn ? '#fb7185' : '#9aa4c7';
-
-          // 自动上报徽章
-          autoSensorRunning = data.autoSensor.enabled;
-          document.getElementById('autoSensorBadge').textContent = autoSensorRunning ? '自动上报: 运行中' : '自动上报: 关闭';
-          document.getElementById('autoSensorBadge').style.color = autoSensorRunning ? '#34d399' : 'var(--accent-2)';
-          document.getElementById('toggleAutoSensorBtn').textContent = autoSensorRunning ? '停止连续自动上报' : '开启连续自动上报';
-          document.getElementById('toggleAutoSensorBtn').className = autoSensorRunning ? 'danger' : 'success';
-
-          // 自动心跳按钮
-          autoHeartbeatRunning = data.autoHeartbeat.enabled;
-          document.getElementById('toggleAutoHeartbeatBtn').textContent = autoHeartbeatRunning ? '停止自动心跳' : '启动自动心跳';
-          document.getElementById('toggleAutoHeartbeatBtn').className = autoHeartbeatRunning ? 'danger' : 'secondary';
+        try {
+          $('sendBtn').disabled = true
+          const res = await fetch('/api/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ topic, payload }),
+          })
+          const data = await res.json()
+          if (data.status !== 0) alert('发送失败: ' + data.message)
         } catch (err) {
-          statusChip.className = 'status-chip offline';
-          statusText.textContent = '无法获取状态';
+          alert('请求出错: ' + err.message)
+        } finally {
+          $('sendBtn').disabled = false
+          fetchStatus()
         }
       }
 
-      // ========== 刷新下发指令流水 ==========
-      async function refreshDirectList() {
-        try {
-          const res = await req('/api/received/direct');
-          const list = res.data?.list || [];
-          const container = document.getElementById('directListContainer');
+      // 启动 / 停止后台自动发送
+      $('autoToggleBtn').onclick = async () => {
+        if (!isAutoRunning) {
+          const topic = $('topicInput').value.trim()
+          if (!topic) return alert('请输入目标主题')
+          const payload = getPayloadData()
+          const intervalMs = Number($('intervalInput').value) || 1000
 
-          if (list.length === 0) {
-            container.innerHTML = '<div style="color:var(--muted); font-size:12px; padding:10px; text-align:center;">暂无下发指令记录</div>';
-            return;
-          }
-
-          container.innerHTML = list.map((item) => `
-            <div class="direct-item">
-              <div class="direct-header">
-                <span style="font-weight:700; color:${item.isModbus ? '#c084fc' : '#60a5fa'}">[${item.topic}]</span>
-                <span>${item.time}</span>
-              </div>
-              <div class="direct-summary">${item.summary}</div>
-              <div class="direct-raw">${item.raw}</div>
-            </div>
-          `).join('');
-
-          // 时间同步
-          const timeRes = await req('/api/received/update-time');
-          const timeData = timeRes.data?.data;
-          document.getElementById('latestTimeSyncPre').textContent = timeData ? JSON.stringify(timeData, null, 2) : '暂无';
-        } catch (err) {}
-      }
-
-      // ========== 物理状态更新 ==========
-      async function updatePhysics(updates) {
-        try {
-          await post('/api/physics/update', updates);
-          await refreshState();
-        } catch (err) {
-          log('更新物理参数失败', err.message);
-        }
-      }
-
-      // 滑块绑定
-      document.getElementById('tempOutRange').oninput = (e) => {
-        document.getElementById('tempOutVal').textContent = `${Number(e.target.value).toFixed(2)} ℃`;
-      };
-      document.getElementById('tempOutRange').onchange = (e) => updatePhysics({ temp_out: Number(e.target.value) });
-
-      document.getElementById('tempInRange').oninput = (e) => {
-        document.getElementById('tempInVal').textContent = `${Number(e.target.value).toFixed(2)} ℃`;
-      };
-      document.getElementById('tempInRange').onchange = (e) => updatePhysics({ temp_in: Number(e.target.value) });
-
-      document.getElementById('flowRange').oninput = (e) => {
-        document.getElementById('flowVal').textContent = `${Number(e.target.value).toFixed(2)} L/min`;
-      };
-      document.getElementById('flowRange').onchange = (e) => updatePhysics({ flow_rate: Number(e.target.value) });
-
-      document.getElementById('pressureRange').oninput = (e) => {
-        document.getElementById('pressureVal').textContent = `${Number(e.target.value).toFixed(1)} kPa`;
-      };
-      document.getElementById('pressureRange').onchange = (e) => updatePhysics({ pressure: Number(e.target.value) });
-
-      // 开关切换
-      document.getElementById('togglePumpBtn').onclick = () => {
-        const curText = document.getElementById('pumpStatusText').textContent;
-        const next = curText.includes('1') ? 0 : 1;
-        updatePhysics({ water_Y2: next });
-      };
-
-      document.getElementById('toggleHeaterBtn').onclick = () => {
-        const curText = document.getElementById('heaterStatusText').textContent;
-        const next = curText.includes('1') ? 0 : 1;
-        updatePhysics({ heat_Y1: next });
-      };
-
-      // ========== 自动上报与单发 ==========
-      document.getElementById('toggleAutoSensorBtn').onclick = async () => {
-        try {
-          if (autoSensorRunning) {
-            await post('/api/sensor/auto/stop');
-            setFeedback('success', '已停止自动连续上报');
-          } else {
-            const intervalMs = Number(document.getElementById('autoIntervalSelect').value);
-            const jitter = document.getElementById('jitterCheck').checked;
-            await post('/api/sensor/auto/start', { intervalMs, jitter });
-            setFeedback('success', `已开启自动连续上报 (${intervalMs}ms/包)`);
-          }
-          await refreshState();
-        } catch (err) {
-          setFeedback('error', `操作失败: ${err.message}`);
-        }
-      };
-
-      document.getElementById('sendSingleSensorBtn').onclick = async () => {
-        try {
-          const res = await post('/api/sensor/send');
-          setFeedback('success', '单包传感器数据已发送');
-          log('单发传感器数据', res);
-        } catch (err) {
-          setFeedback('error', `发送失败: ${err.message}`);
-        }
-      };
-
-      // ========== 自动心跳 ==========
-      document.getElementById('toggleAutoHeartbeatBtn').onclick = async () => {
-        try {
-          if (autoHeartbeatRunning) {
-            await post('/api/heartbeat/auto/stop');
-            setFeedback('success', '已停止自动心跳');
-          } else {
-            await post('/api/heartbeat/auto/start', { intervalMs: 3000 });
-            setFeedback('success', '已启动自动心跳 (3s/包)');
-          }
-          await refreshState();
-        } catch (err) {
-          setFeedback('error', `操作失败: ${err.message}`);
-        }
-      };
-
-      document.getElementById('sendSingleHeartbeatBtn').onclick = async () => {
-        try {
-          const res = await post('/api/heartbeat/send');
-          setFeedback('success', '心跳包已发送');
-          log('单发心跳', res);
-        } catch (err) {
-          setFeedback('error', `发送失败: ${err.message}`);
-        }
-      };
-
-      // ========== 一键场景宏 ==========
-      document.querySelectorAll('.scenario-btn[data-scenario]').forEach((btn) => {
-        btn.onclick = async () => {
-          const scenario = btn.dataset.scenario;
-          setFeedback('pending', `正在执行场景: ${btn.querySelector('.title').textContent}...`);
           try {
-            const res = await post('/api/scenario/run', { type: scenario });
-            setFeedback('success', res.message || '场景执行完毕');
-            log(`执行场景 [${scenario}]`, res);
-            await refreshState();
-          } catch (err) {
-            setFeedback('error', `场景执行失败: ${err.message}`);
+            const res = await fetch('/api/auto/start', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ topic, payload, intervalMs }),
+            })
+            const data = await res.json()
+            if (data.status === 0) {
+              isAutoRunning = true
+              updateAutoUi(true)
+            } else {
+              alert('开启自动发送失败: ' + data.message)
+            }
+          } catch (e) {
+            alert('网络请求出错: ' + e.message)
           }
-        };
-      });
-
-      document.getElementById('sendQuickTimeReq').onclick = async () => {
-        try {
-          const res = await post('/api/time-request/send');
-          setFeedback('success', '已发送时间同步请求 (device/timeRequest)');
-          log('发送时间请求', res);
-        } catch (err) {
-          setFeedback('error', `发送失败: ${err.message}`);
-        }
-      };
-
-      // ========== 手动单发 ==========
-      document.getElementById('manualTypeSelect').onchange = (e) => {
-        const val = e.target.value;
-        document.getElementById('behaviorBox').style.display = val === 'behavior' ? 'grid' : 'none';
-        document.getElementById('errorBox').style.display = val === 'error' ? 'grid' : 'none';
-        document.getElementById('directReportBox').style.display = val === 'direct_report' ? 'grid' : 'none';
-      };
-
-      document.getElementById('sendManualBehaviorBtn').onclick = async () => {
-        try {
-          const res = await post('/api/behavior/send', {
-            payload: {
-              text_field: document.getElementById('behaviorText').value,
-              pid: document.getElementById('behaviorPid').value,
-            },
-          });
-          setFeedback('success', '行为数据已发送');
-          log('发送行为数据', res);
-        } catch (err) {
-          setFeedback('error', `发送失败: ${err.message}`);
-        }
-      };
-
-      document.getElementById('sendManualErrorBtn').onclick = async () => {
-        try {
-          const res = await post('/api/error/send', {
-            payload: {
-              e_no: document.getElementById('manualErrorNo').value,
-              type: document.getElementById('manualErrorType').value,
-              e_msg: document.getElementById('manualErrorMsg').value,
-            },
-          });
-          setFeedback('success', '错误数据已发送');
-          log('发送错误数据', res);
-        } catch (err) {
-          setFeedback('error', `发送失败: ${err.message}`);
-        }
-      };
-
-      document.getElementById('sendManualReportBtn').onclick = async () => {
-        try {
-          const res = await post('/api/direct/report', {
-            payload: {
-              config_id: Number(document.getElementById('reportConfigId').value),
-              value: document.getElementById('reportValue').value,
-            },
-          });
-          setFeedback('success', '指令上报已发送');
-          log('指令上报', res);
-        } catch (err) {
-          setFeedback('error', `发送失败: ${err.message}`);
-        }
-      };
-
-      // ========== Broker 配置折叠与保存 ==========
-      document.getElementById('toggleBrokerBtn').onclick = () => {
-        document.getElementById('brokerDrawer').classList.toggle('open');
-      };
-
-      document.getElementById('saveBrokerBtn').onclick = async () => {
-        try {
-          const body = {
-            host: document.getElementById('brokerHost').value.trim(),
-            port: Number(document.getElementById('brokerPort').value),
-            username: document.getElementById('brokerUser').value.trim(),
-            password: document.getElementById('brokerPass').value.trim(),
-            clientId: document.getElementById('brokerClientId').value.trim(),
-          };
-          const res = await post('/api/mqtt/reconnect', body);
-          setFeedback('success', 'Broker 重连请求已发出');
-          log('Broker 配置已更新并重连', res);
-          setTimeout(refreshState, 800);
-        } catch (err) {
-          setFeedback('error', `重连失败: ${err.message}`);
-        }
-      };
-
-      // ========== 设备号切换 ==========
-      document.getElementById('deviceSelect').onchange = async (e) => {
-        const val = e.target.value;
-        const customInput = document.getElementById('customDeviceInput');
-        if (val === 'custom') {
-          customInput.style.display = 'inline-block';
         } else {
-          customInput.style.display = 'none';
-          await post('/api/device/set', { deviceId: val });
-          setFeedback('success', `已切换模拟设备号为: ${val}`);
-          await refreshState();
+          try {
+            const res = await fetch('/api/auto/stop', { method: 'POST' })
+            const data = await res.json()
+            if (data.status === 0) {
+              isAutoRunning = false
+              updateAutoUi(false)
+            }
+          } catch (e) {
+            alert('停止失败: ' + e.message)
+          }
         }
-      };
+        fetchStatus()
+      }
 
-      document.getElementById('customDeviceInput').onchange = async (e) => {
-        const val = e.target.value.trim();
-        if (val) {
-          await post('/api/device/set', { deviceId: val });
-          setFeedback('success', `已切换模拟设备号为: ${val}`);
-          await refreshState();
+      const updateAutoUi = (running, count = 0, topic = '') => {
+        isAutoRunning = running
+        if (running) {
+          $('autoToggleBtn').textContent = '停止自动发送'
+          $('autoToggleBtn').className = 'btn btn-danger'
+          $('autoStatus').textContent = `运行中 (已发: ${count} 次, 主题: ${topic || $('topicInput').value})`
+          $('autoStatus').style.color = '#3fb950'
+        } else {
+          $('autoToggleBtn').textContent = '开启自动发送'
+          $('autoToggleBtn').className = 'btn btn-green'
+          $('autoStatus').textContent = '已停止'
+          $('autoStatus').style.color = 'var(--muted)'
         }
-      };
+      }
 
-      // ========== 清空流水与日志 ==========
-      document.getElementById('refreshDirectBtn').onclick = refreshDirectList;
-      document.getElementById('clearDirectBtn').onclick = async () => {
-        await post('/api/received/clear');
-        await refreshDirectList();
-        setFeedback('success', '已清空下发指令流水');
-      };
+      // 保存 Broker 配置
+      $('saveConfigBtn').onclick = async () => {
+        const body = {
+          host: $('cfgHost').value.trim(),
+          port: Number($('cfgPort').value),
+          username: $('cfgUser').value.trim(),
+          password: $('cfgPass').value,
+          clientId: $('cfgClientId').value.trim(),
+        }
+        try {
+          const res = await fetch('/api/mqtt/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          })
+          const data = await res.json()
+          if (data.status === 0) {
+            alert('Broker 配置已更新并触发重连')
+            $('configDrawer').classList.remove('show')
+          }
+        } catch (e) {
+          alert('保存失败: ' + e.message)
+        }
+      }
 
-      document.getElementById('clearLogBtn').onclick = () => {
-        outputPre.textContent = '';
-      };
+      // 清空日志
+      $('clearLogBtn').onclick = async () => {
+        await fetch('/api/logs/clear', { method: 'POST' })
+        $('logBox').innerHTML = ''
+      }
 
-      // ========== 定时轮询与初始化 ==========
-      refreshState();
-      refreshDirectList();
-      setInterval(refreshDirectList, 2000);
-      setInterval(refreshState, 3000);
+      // 渲染日志
+      const renderLogs = (logs = []) => {
+        if (!logs || !logs.length) {
+          $('logBox').innerHTML = '<div style="color:var(--muted); text-align:center; padding: 20px;">暂无发送日志</div>'
+          return
+        }
+        $('logBox').innerHTML = logs.map(l => `
+          <div class="log-item">
+            <span class="log-time">${l.time}</span>
+            <span class="log-tag ${l.success ? 'log-success' : 'log-fail'}">[${l.type}${l.success ? '成功' : '失败'}]</span>
+            <span class="log-topic">${l.topic}</span>
+            <span class="log-body" title="${l.content.replace(/"/g, '&quot;')}">${l.content}</span>
+          </div>
+        `).join('')
+      }
+
+      // 状态拉取轮询
+      const fetchStatus = async () => {
+        try {
+          const res = await fetch('/api/status')
+          const resData = await res.json()
+          if (resData.status === 0 && resData.data) {
+            const { connected, autoPublish, logs, options } = resData.data
+            // 更新连接状态
+            const badge = $('statusBadge')
+            const text = $('statusText')
+            if (connected) {
+              badge.className = 'status-badge online'
+              text.textContent = `已连接 (${options?.host}:${options?.port})`
+            } else {
+              badge.className = 'status-badge offline'
+              text.textContent = '未连接'
+            }
+
+            // 更新自动发送状态
+            updateAutoUi(autoPublish.running, autoPublish.count, autoPublish.topic)
+
+            // 渲染日志
+            renderLogs(logs)
+          }
+        } catch (err) {
+          $('statusBadge').className = 'status-badge offline'
+          $('statusText').textContent = '服务离线'
+        }
+      }
+
+      fetchStatus()
+      setInterval(fetchStatus, 1500)
     </script>
   </body>
 </html>
