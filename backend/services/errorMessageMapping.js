@@ -1,5 +1,3 @@
-const { VSTATUS_TEXT } = require("../constants/vstatus")
-
 // 默认错误码映射，保证在数据库还没手工维护前也能给出基础中文提示。
 const DEFAULT_ERROR_MAPPINGS = [
   { e_no: "E001", type: "3", e_msg: "温度传感器连接超时" },
@@ -7,6 +5,12 @@ const DEFAULT_ERROR_MAPPINGS = [
   { e_no: "E003", type: "4", e_msg: "空调运行异常" },
   { e_no: "E004", type: "5", e_msg: "风机运行异常" },
   { e_no: "E005", type: "6", e_msg: "设备断电超时" },
+  { e_no: "E201", type: "6", e_msg: "管路超压急停保护" },
+  { e_no: "E202", type: "6", e_msg: "水温超限散热保护" },
+  { e_no: "E203", type: "6", e_msg: "失流干烧保护" },
+  { e_no: "E204", type: "6", e_msg: "水泵启动建流超时" },
+  { e_no: "E205", type: "6", e_msg: "传感器数据更新超时" },
+  { e_no: "E206", type: "6", e_msg: "控制指令发布超时" },
 ]
 
 // 错误码映射表用于把设备错误编号翻译成应用层中文语义。
@@ -34,9 +38,11 @@ const buildSeedErrorMessageMappingsSql = () => {
 
 // 找不到精确映射时，至少返回一个可读的兜底提示，不把前端暴露成空字符串。
 const fallbackErrorMessage = ({ e_no, type }) => {
-  const mappedByType = VSTATUS_TEXT[Number.parseInt(type, 10)]
-  if (mappedByType) {
-    return mappedByType
+  const matchedDefault = DEFAULT_ERROR_MAPPINGS.find(
+    (item) => (e_no && item.e_no === String(e_no).trim()) || (type && item.type === String(type).trim()),
+  )
+  if (matchedDefault?.e_msg) {
+    return matchedDefault.e_msg
   }
 
   if (e_no && type) {
@@ -64,7 +70,8 @@ const resolveMappedErrorMessage = async ({
   const rawMessage = String(e_msg ?? "").trim()
   if (rawMessage) return rawMessage
 
-  const row = await findMapping(String(e_no ?? "").trim(), String(type ?? "").trim())
+  const finder = typeof findMapping === "function" ? findMapping : findErrorMessageMapping
+  const row = await finder(String(e_no ?? "").trim(), String(type ?? "").trim())
   if (row?.e_msg) return row.e_msg
 
   return fallbackErrorMessage({ e_no, type })
@@ -99,14 +106,52 @@ const ensureErrorMessageMappings = async () => {
 // 供消息落库流程按错误编号 + 类型反查中文错误信息。
 const findErrorMessageMapping = async (e_no, type) => {
   const db = require("../db")
-  const sql = `SELECT e_msg FROM t_error_code_mapper WHERE e_no = ? AND type = ? LIMIT 1`
+  const cleanNo = String(e_no ?? "").trim()
+  const cleanType = String(type ?? "").trim()
+
+  if (cleanNo && cleanType) {
+    const sql = `SELECT e_msg FROM t_error_code_mapper WHERE e_no = ? AND type = ? LIMIT 1`
+    const rows = await new Promise((resolve, reject) => {
+      db.query(sql, [cleanNo, cleanType], (err, res) => {
+        if (err) return reject(err)
+        resolve(res || [])
+      })
+    })
+    if (rows.length) return rows[0]
+  }
+
+  if (cleanNo) {
+    const sql = `SELECT e_msg FROM t_error_code_mapper WHERE e_no = ? ORDER BY id LIMIT 1`
+    const rows = await new Promise((resolve, reject) => {
+      db.query(sql, [cleanNo], (err, res) => {
+        if (err) return reject(err)
+        resolve(res || [])
+      })
+    })
+    if (rows.length) return rows[0]
+  }
+
+  if (cleanType) {
+    const sql = `SELECT e_msg FROM t_error_code_mapper WHERE type = ? ORDER BY id LIMIT 1`
+    const rows = await new Promise((resolve, reject) => {
+      db.query(sql, [cleanType], (err, res) => {
+        if (err) return reject(err)
+        resolve(res || [])
+      })
+    })
+    if (rows.length) return rows[0]
+  }
+
+  return null
+}
+
+const getAllErrorMappings = async () => {
+  const db = require("../db")
+  const sql = `SELECT * FROM t_error_code_mapper ORDER BY id`
   return new Promise((resolve, reject) => {
-    db.query(sql, [e_no, type], (err, rows) => {
-      if (err) {
-        reject(err)
-        return
-      }
-      resolve(rows?.[0] || null)
+    db.query(sql, (err, rows) => {
+      if (err) return reject(err)
+      resolve(rows || [])
     })
   })
 }
@@ -118,5 +163,6 @@ module.exports = {
   ensureErrorMessageMappings,
   fallbackErrorMessage,
   findErrorMessageMapping,
+  getAllErrorMappings,
   resolveMappedErrorMessage,
 }

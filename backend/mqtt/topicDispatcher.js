@@ -98,7 +98,7 @@ const createTopicDispatcher = ({
             d_no: errorPayload.d_no,
             code,
             level: getAlarmLevel(code),
-            text: VSTATUS_TEXT[code] || errorPayload.e_msg || `异常(${code})`,
+            text: errorPayload.e_msg || VSTATUS_TEXT[code] || `异常(${code})`,
             updated_at: errorPayload.c_time || null,
           })
         }

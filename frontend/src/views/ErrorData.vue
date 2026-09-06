@@ -15,11 +15,33 @@ const chartRef = ref(null)
 let chartInstance = null
 let stopWsListen = null
 
+// 错误类型通用语义映射（支持数字代码与中文展示）
+const ERROR_TYPE_NAMES = {
+  '1': '一般告警',
+  '2': '通信异常',
+  '3': '传感器故障',
+  '4': '设备异常',
+  '5': '动力异常',
+  '6': '安全保护/急停',
+}
+
+const formatTypeName = (type) => {
+  if (!type) return '未知类型'
+  const clean = String(type).trim()
+  return ERROR_TYPE_NAMES[clean] ? `${ERROR_TYPE_NAMES[clean]} (${clean})` : `类型 ${clean}`
+}
+
+const formatTypeChartName = (type) => {
+  if (!type) return '未知类型'
+  const clean = String(type).trim()
+  return ERROR_TYPE_NAMES[clean] || `类型 ${clean}`
+}
+
 // 根据当前列表实时统计各类错误占比，用于底部饼图。
 const errorTypeData = computed(() => {
   const map = {}
   ;(sensorData.value || []).forEach((row) => {
-    const key = row.type || '未知'
+    const key = formatTypeChartName(row.type)
     map[key] = (map[key] || 0) + 1
   })
   return Object.entries(map).map(([name, value]) => ({ name, value }))
@@ -212,7 +234,7 @@ watch(
       </el-table-column>
       <el-table-column label="错误类型">
         <template #default="scope">
-          {{ scope.row.type || '暂无' }}
+          {{ formatTypeName(scope.row.type) }}
         </template>
       </el-table-column>
       <el-table-column label="错误信息">

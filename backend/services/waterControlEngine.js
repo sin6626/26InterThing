@@ -315,16 +315,31 @@ const notifyStatusChange = (dNo) => {
   }
 }
 
+const FAULT_CODE_TO_ERROR_MAP = {
+  [FAULT_CODES.OVER_PRESSURE]: { e_no: "E201", type: "6" },
+  [FAULT_CODES.OVER_TEMPERATURE]: { e_no: "E202", type: "6" },
+  [FAULT_CODES.LOW_FLOW]: { e_no: "E203", type: "6" },
+  [FAULT_CODES.BUILD_FLOW_TIMEOUT]: { e_no: "E204", type: "6" },
+  [FAULT_CODES.SENSOR_FLOW_TIMEOUT]: { e_no: "E205", type: "6" },
+  [FAULT_CODES.SENSOR_PRESSURE_TIMEOUT]: { e_no: "E205", type: "6" },
+  [FAULT_CODES.SENSOR_TEMPERATURE_TIMEOUT]: { e_no: "E205", type: "6" },
+  [FAULT_CODES.COMMAND_PUBLISH_FAILED]: { e_no: "E206", type: "6" },
+}
+
 const recordFault = async (dNo, faultCode, reason) => {
   const nowTime = new Date().toLocaleString()
   console.warn(`[WaterControl][${faultCode}] 设备 ${dNo}: ${reason}`)
+
+  const errorMapping = FAULT_CODE_TO_ERROR_MAP[faultCode] || { e_no: faultCode, type: "6" }
+  const eNo = errorMapping.e_no
+  const errorType = errorMapping.type
 
   if (typeof configLoaderDep !== "function") {
     try {
       const { query } = require("../repositories/query")
       await query(
         "INSERT INTO t_error_msg (d_no, c_time, e_msg, e_no, type) VALUES (?, NOW(), ?, ?, ?)",
-        [dNo, `安全保护: ${reason}`, faultCode, "7"],
+        [dNo, `安全保护: ${reason}`, eNo, errorType],
       )
     } catch (error) {
       console.error(`[WaterControl] 写入设备 ${dNo} 故障失败:`, error.message)
@@ -340,8 +355,8 @@ const recordFault = async (dNo, faultCode, reason) => {
     }
   }
   if (typeof broadcast === "function") {
-    broadcast("error_realtime", { d_no: dNo, e_no: faultCode, type: "7", e_msg: `安全保护: ${reason}`, c_time: nowTime })
-    broadcast("alarm_realtime", { d_no: dNo, code: 7, level: "error", text: `安全保护: ${reason}`, updated_at: nowTime })
+    broadcast("error_realtime", { d_no: dNo, e_no: eNo, type: errorType, e_msg: `安全保护: ${reason}`, c_time: nowTime })
+    broadcast("alarm_realtime", { d_no: dNo, code: Number(errorType) || 6, level: "error", text: `安全保护: ${reason}`, updated_at: nowTime })
   }
 }
 
