@@ -316,14 +316,14 @@ const notifyStatusChange = (dNo) => {
 }
 
 const FAULT_CODE_TO_ERROR_MAP = {
-  [FAULT_CODES.OVER_PRESSURE]: { e_no: "E201", type: "6" },
-  [FAULT_CODES.OVER_TEMPERATURE]: { e_no: "E202", type: "6" },
-  [FAULT_CODES.LOW_FLOW]: { e_no: "E203", type: "6" },
-  [FAULT_CODES.BUILD_FLOW_TIMEOUT]: { e_no: "E204", type: "6" },
-  [FAULT_CODES.SENSOR_FLOW_TIMEOUT]: { e_no: "E205", type: "6" },
-  [FAULT_CODES.SENSOR_PRESSURE_TIMEOUT]: { e_no: "E205", type: "6" },
-  [FAULT_CODES.SENSOR_TEMPERATURE_TIMEOUT]: { e_no: "E205", type: "6" },
-  [FAULT_CODES.COMMAND_PUBLISH_FAILED]: { e_no: "E206", type: "6" },
+  [FAULT_CODES.OVER_PRESSURE]: { e_no: "OVER_PRESSURE", type: "6" },
+  [FAULT_CODES.OVER_TEMPERATURE]: { e_no: "OVER_TEMPERATURE", type: "6" },
+  [FAULT_CODES.LOW_FLOW]: { e_no: "LOW_FLOW", type: "6" },
+  [FAULT_CODES.BUILD_FLOW_TIMEOUT]: { e_no: "BUILD_FLOW_TIMEOUT", type: "6" },
+  [FAULT_CODES.SENSOR_FLOW_TIMEOUT]: { e_no: "SENSOR_FLOW_TIMEOUT", type: "3" },
+  [FAULT_CODES.SENSOR_PRESSURE_TIMEOUT]: { e_no: "SENSOR_PRESSURE_TIMEOUT", type: "3" },
+  [FAULT_CODES.SENSOR_TEMPERATURE_TIMEOUT]: { e_no: "SENSOR_TEMPERATURE_TIMEOUT", type: "3" },
+  [FAULT_CODES.COMMAND_PUBLISH_FAILED]: { e_no: "COMMAND_PUBLISH_FAILED", type: "2" },
 }
 
 const recordFault = async (dNo, faultCode, reason) => {

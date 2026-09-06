@@ -1,16 +1,15 @@
 // 默认错误码映射，保证在数据库还没手工维护前也能给出基础中文提示。
 const DEFAULT_ERROR_MAPPINGS = [
+  { e_no: "OVER_PRESSURE", type: "6", e_msg: "管路超压急停保护" },
+  { e_no: "OVER_TEMPERATURE", type: "6", e_msg: "水温超限散热保护" },
+  { e_no: "LOW_FLOW", type: "6", e_msg: "失流干烧保护" },
+  { e_no: "BUILD_FLOW_TIMEOUT", type: "6", e_msg: "水泵启动建流超时" },
+  { e_no: "SENSOR_FLOW_TIMEOUT", type: "3", e_msg: "流量传感器数据超时" },
+  { e_no: "SENSOR_TEMPERATURE_TIMEOUT", type: "3", e_msg: "温度传感器数据超时" },
+  { e_no: "SENSOR_PRESSURE_TIMEOUT", type: "3", e_msg: "压力传感器数据超时" },
+  { e_no: "COMMAND_PUBLISH_FAILED", type: "2", e_msg: "控制指令发布超时" },
   { e_no: "E001", type: "3", e_msg: "温度传感器连接超时" },
   { e_no: "E002", type: "2", e_msg: "通信连接异常" },
-  { e_no: "E003", type: "4", e_msg: "空调运行异常" },
-  { e_no: "E004", type: "5", e_msg: "风机运行异常" },
-  { e_no: "E005", type: "6", e_msg: "设备断电超时" },
-  { e_no: "E201", type: "6", e_msg: "管路超压急停保护" },
-  { e_no: "E202", type: "6", e_msg: "水温超限散热保护" },
-  { e_no: "E203", type: "6", e_msg: "失流干烧保护" },
-  { e_no: "E204", type: "6", e_msg: "水泵启动建流超时" },
-  { e_no: "E205", type: "6", e_msg: "传感器数据更新超时" },
-  { e_no: "E206", type: "6", e_msg: "控制指令发布超时" },
 ]
 
 // 错误码映射表用于把设备错误编号翻译成应用层中文语义。
