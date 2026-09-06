@@ -54,15 +54,15 @@ const getLatestMedia = (deviceNo) => {
 const getChartRows = (sql, params) => query(sql, params)
 
 // 历史列表分页前先统计总数，便于前端展示总页数。
-const countPastRows = (tableprefix, dNo, timeSql, queryParams) => {
-  const sql = buildCountPastRowsSql(tableprefix, Boolean(dNo), timeSql)
+const countPastRows = (tableprefix, dNo, timeSql, queryParams, statusSql = "") => {
+  const sql = buildCountPastRowsSql(tableprefix, Boolean(dNo), timeSql, statusSql)
 
   return query(sql, queryParams)
 }
 
 // 历史数据查询与 count 共用同一套过滤条件，避免分页前后口径不一致。
-const getPastRows = (tableprefix, dNo, timeSql, queryParams) => {
-  const sql = buildPastRowsSql(tableprefix, Boolean(dNo), timeSql)
+const getPastRows = (tableprefix, dNo, timeSql, queryParams, statusSql = "") => {
+  const sql = buildPastRowsSql(tableprefix, Boolean(dNo), timeSql, statusSql)
 
   return query(sql, queryParams)
 }

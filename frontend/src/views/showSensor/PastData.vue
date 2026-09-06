@@ -14,6 +14,7 @@ const columns = ref([])
 const startTime = ref(null)
 const endTime = ref(null)
 const selectedDeviceNo = ref('')
+const selectedStatus = ref('all')
 const chartData = ref({ xAxisData: [], seriesData: [] })
 const chartPointLimit = ref(10)
 const chartType = ref('line')
@@ -30,6 +31,7 @@ const curquery = ref({
   startTime: null,
   endTime: null,
   d_no: null,
+  status: 'all',
 })
 
 const { numbers: deviceNumbers, fetchDeviceNumbers } = useDeviceNumbers()
@@ -65,6 +67,7 @@ const query = async () => {
     startTime: startTime.value ? formatDateTime(startTime.value) : null,
     endTime: endTime.value ? formatDateTime(endTime.value) : null,
     d_no: switchStore.value ? selectedDeviceNo.value || null : null,
+    status: selectedStatus.value || 'all',
   }
 
   await Promise.all([getList(), getChart()])
@@ -100,6 +103,13 @@ const handleCurrentChange = async (val) => {
   await getList()
 }
 
+const tableRowClassName = ({ row }) => {
+  if (Number(row.vstatus) !== 0) {
+    return 'alarm-row'
+  }
+  return ''
+}
+
 onMounted(async () => {
   await fetchDeviceNumbers()
   sensorData.value = []
@@ -127,6 +137,17 @@ onMounted(async () => {
             :label="item.label"
             :value="item.value"
           />
+        </el-select>
+
+        <el-select
+          v-model="selectedStatus"
+          placeholder="数据状态"
+          style="width: 130px"
+          @change="query"
+        >
+          <el-option label="全部数据" value="all" />
+          <el-option label="仅看正常" value="normal" />
+          <el-option label="仅看告警异常" value="abnormal" />
         </el-select>
 
         <el-date-picker
@@ -162,7 +183,11 @@ onMounted(async () => {
       </div>
     </template>
 
-    <el-table :data="sensorData" @selection-change="handleSelectionChange">
+    <el-table
+      :data="sensorData"
+      :row-class-name="tableRowClassName"
+      @selection-change="handleSelectionChange"
+    >
       <el-table-column type="selection" width="48" />
       <el-table-column label="序号" type="index" width="60px" />
       <el-table-column v-if="switchStore.value" prop="编号" label="编号" width="100" />
@@ -176,7 +201,14 @@ onMounted(async () => {
         :width="col.width"
       >
         <template #default="scope">
-          {{ scope.row[col.prop] ?? '--' }}
+          <el-tag
+            v-if="col.prop === '数据状态'"
+            :type="Number(scope.row.vstatus) === 0 ? 'success' : 'danger'"
+            size="small"
+          >
+            {{ Number(scope.row.vstatus) === 0 ? '正常' : '告警' }}
+          </el-tag>
+          <span v-else>{{ scope.row[col.prop] ?? '--' }}</span>
         </template>
       </el-table-column>
     </el-table>
@@ -210,5 +242,10 @@ onMounted(async () => {
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+:deep(.el-table .alarm-row) {
+  --el-table-tr-bg-color: #fef0f0 !important;
+  background-color: #fef0f0 !important;
 }
 </style>

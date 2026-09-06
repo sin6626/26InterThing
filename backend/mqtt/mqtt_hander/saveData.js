@@ -4,6 +4,7 @@ const {
   findErrorMessageMapping,
   resolveMappedErrorMessage,
 } = require("../../services/errorMessageMapping")
+const { evaluateSensorVstatus } = require("../../services/sensorValidationService")
 
 const parsePayloadWithDevice = (payload, label, callback) => {
   try {
@@ -20,9 +21,18 @@ const parsePayloadWithDevice = (payload, label, callback) => {
 }
 
 // 传感器数据字段是动态映射的，所以要先查字段定义，再按顺序组装 SQL。
-exports.saveSensorData = (topic, payload, callback) => {
+exports.saveSensorData = async (topic, payload, callback) => {
   const data = parsePayloadWithDevice(payload, "传感器数据", callback)
   if (!data) return
+
+  let evaluatedVstatus = 0
+  try {
+    evaluatedVstatus = await evaluateSensorVstatus(data)
+  } catch (evalErr) {
+    console.warn("评估vstatus失败，降级为0:", evalErr.message)
+    evaluatedVstatus = 0
+  }
+  data.vstatus = evaluatedVstatus
 
   const params = []
   params.push(data.d_no)
@@ -51,9 +61,8 @@ exports.saveSensorData = (topic, payload, callback) => {
     params.push(recordTime)
     params.push(data['online'] || '实时数据')
 
-    // VStatus / vstatus 都兼容，缺失时按正常状态 0 处理。
-    const vstatusValue = data['VStatus'] ?? data['vstatus'] ?? 0
-    params.push(Number.isFinite(Number(vstatusValue)) ? Number(vstatusValue) : 0)
+    // 写入根据用户配置动态判定出的真实 vstatus（超标为 1，正常为 0）
+    params.push(evaluatedVstatus)
 
     const allColumns = ['d_no', ...fieldNames, 'c_time', 'online', 'vstatus']
     const placeholders = allColumns.map(() => '?').join(', ')

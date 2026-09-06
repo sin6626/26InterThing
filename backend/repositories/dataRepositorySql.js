@@ -10,17 +10,19 @@ const buildLatestRealtimeRecordSql = (tableprefix, hasDeviceFilter = true) => {
 }
 
 // 历史分页查询与 count 查询共用同一套 where 条件生成规则。
-const buildCountPastRowsSql = (tableprefix, hasDeviceFilter, timeSql) => {
+const buildCountPastRowsSql = (tableprefix, hasDeviceFilter, timeSql, statusSql = "") => {
   return `select count(*) as total from ${tableprefix}_data where
     ${hasDeviceFilter ? "d_no = ?" : "1=1"}
-    ${timeSql}`
+    ${timeSql}
+    ${statusSql}`
 }
 
 // 历史列表按设备编号和采集时间倒序，便于优先看到最新数据。
-const buildPastRowsSql = (tableprefix, hasDeviceFilter, timeSql) => {
+const buildPastRowsSql = (tableprefix, hasDeviceFilter, timeSql, statusSql = "") => {
   return `select * from ${tableprefix}_data where
     ${hasDeviceFilter ? "d_no = ?" : "1=1"}
     ${timeSql}
+    ${statusSql}
     order by d_no, c_time desc
     limit ? offset ?`
 }

@@ -118,6 +118,13 @@ const buildPastColumns = (fieldMapper) => {
       id: item.id,
     })),
     {
+      prop: "数据状态",
+      label: "状态",
+      visible: true,
+      type: "string",
+      width: 100,
+    },
+    {
       prop: "是否在线",
       label: "是否在线",
       visible: true,
@@ -144,6 +151,9 @@ const buildPastRows = (rows, fieldMapper) => {
       row[field.f_name] = item[field.db_name]
     })
 
+    const vstatusNum = Number(item.vstatus ?? 0)
+    row["vstatus"] = vstatusNum
+    row["数据状态"] = vstatusNum === 0 ? "正常" : "告警"
     row["是否在线"] = item.online
     row["更新时间"] = dayjs(item.c_time).format("YYYY-MM-DD HH:mm:ss")
     return row

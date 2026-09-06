@@ -90,6 +90,7 @@ const getPastData = async (tableprefix, {
   pagenum,
   pagesize,
   startTime,
+  status,
 }) => {
   // 历史页的核心思路：
   // 先 count 再分页查 rows，最后统一走 serializer 转成前端表格格式。
@@ -104,11 +105,22 @@ const getPastData = async (tableprefix, {
   const { params: timeParams, timeSql } = buildTimeSql(startTime, endTime)
   queryParams.push(...timeParams)
 
+  // 支持按数据状态（正常/异常）进行筛选
+  let statusSql = ""
+  if (tableprefix === "t_sensor" && status) {
+    if (status === "normal") {
+      statusSql = " and vstatus = 0"
+    } else if (status === "abnormal") {
+      statusSql = " and vstatus != 0"
+    }
+  }
+
   const countResult = await dataRepository.countPastRows(
     tableprefix,
     d_no,
     timeSql,
     queryParams,
+    statusSql,
   )
   const total = countResult[0].total
 
@@ -119,6 +131,7 @@ const getPastData = async (tableprefix, {
     d_no,
     timeSql,
     rowParams,
+    statusSql,
   )
 
   return {
