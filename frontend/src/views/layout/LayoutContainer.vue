@@ -160,7 +160,7 @@ onBeforeUnmount(() => {
           </el-menu-item>
         </el-sub-menu>
 
-        <el-sub-menu index="/behavior">
+        <el-sub-menu v-if="false" index="/behavior">
           <template #title>
             <el-icon>
               <Bell />
