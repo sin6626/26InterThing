@@ -69,6 +69,12 @@ const getOrCreateDeviceState = (dNo) => {
       countdown: 0,
       coolingExitState: FSM_STATES.STOPPED,
       lowFlowStartTime: 0,
+      zeroStartTime: {
+        temp_in: 0,
+        temp_out: 0,
+        flow_rate: 0,
+        pressure: 0,
+      },
       lastSensors: {
         temp_in: null,
         temp_out: null,
@@ -239,11 +245,27 @@ const executeDeviceAction = async (dNo, topic, value, remark = "应用层自动�
   }
 }
 
+const isAbnormalZero = (state, field, value) => {
+  if (value === null || value === undefined) return false
+  const num = Number(value)
+  if (!Number.isFinite(num) || num > 0.0001) return false
+  if (field === "temp_in" || field === "temp_out") {
+    return true
+  }
+  if (field === "flow_rate" || field === "pressure") {
+    const runningWithPump = state.pumpState === "on" && state.fsmState !== FSM_STATES.BUILDING_FLOW
+    return runningWithPump
+  }
+  return false
+}
+
 const getStaleSensors = (state, now = Date.now(), timeoutSeconds = state.dataTimeoutSeconds) => {
   const timeoutMs = timeoutSeconds * 1000
   return SENSOR_FIELDS.filter((field) => {
     const updatedAt = state.sensorUpdatedAt[field]
-    return state.lastSensors[field] === null || !updatedAt || now - updatedAt > timeoutMs
+    const zeroStart = state.zeroStartTime?.[field] || 0
+    const isZeroExpired = zeroStart > 0 && (now - zeroStart > timeoutMs)
+    return state.lastSensors[field] === null || !updatedAt || now - updatedAt > timeoutMs || isZeroExpired
   })
 }
 
@@ -371,7 +393,7 @@ const getSensorFault = (staleSensors) => {
   return { code: FAULT_CODES.SENSOR_TEMPERATURE_TIMEOUT, reason: `温度传感器数据超时或无效: ${formatStaleSensors(staleSensors)}`, stopPump: false }
 }
 
-const updateNumericSensor = (state, rawData, field, fallbackField, now) => {
+const updateNumericSensor = (state, rawData, field, fallbackField, now, timeoutSeconds = state.dataTimeoutSeconds) => {
   const hasPrimary = Object.prototype.hasOwnProperty.call(rawData, field)
   const hasFallback = fallbackField && Object.prototype.hasOwnProperty.call(rawData, fallbackField)
   if (!hasPrimary && !hasFallback) return
@@ -379,23 +401,45 @@ const updateNumericSensor = (state, rawData, field, fallbackField, now) => {
   const parsedValue = typeof rawValue === "number"
     ? rawValue
     : (typeof rawValue === "string" && rawValue.trim() !== "" ? Number(rawValue) : Number.NaN)
+
+  if (!state.zeroStartTime) {
+    state.zeroStartTime = { temp_in: 0, temp_out: 0, flow_rate: 0, pressure: 0 }
+  }
+
   if (Number.isFinite(parsedValue)) {
-    state.lastSensors[field] = parsedValue
-    state.sensorUpdatedAt[field] = now
+    if (isAbnormalZero(state, field, parsedValue)) {
+      if (!state.zeroStartTime[field]) {
+        state.zeroStartTime[field] = now
+      }
+      const timeoutMs = timeoutSeconds * 1000
+      if (now - state.zeroStartTime[field] > timeoutMs) {
+        state.lastSensors[field] = null
+        state.sensorUpdatedAt[field] = 0
+      } else {
+        state.lastSensors[field] = parsedValue
+        state.sensorUpdatedAt[field] = now
+      }
+    } else {
+      state.zeroStartTime[field] = 0
+      state.lastSensors[field] = parsedValue
+      state.sensorUpdatedAt[field] = now
+    }
   } else {
+    state.zeroStartTime[field] = 0
     state.lastSensors[field] = null
     state.sensorUpdatedAt[field] = 0
   }
 }
 
 const updateSensorState = (state, rawData, now) => {
+  if (Object.prototype.hasOwnProperty.call(rawData, "water_Y2")) state.pumpState = Number(rawData.water_Y2) === 1 ? "on" : "off"
+  if (Object.prototype.hasOwnProperty.call(rawData, "heat_Y1")) state.heaterState = Number(rawData.heat_Y1) === 1 ? "on" : "off"
+  if (rawData.c_time !== undefined || rawData.time !== undefined) state.lastSensors.c_time = rawData.c_time || rawData.time || null
+
   updateNumericSensor(state, rawData, "temp_in", "field3", now)
   updateNumericSensor(state, rawData, "temp_out", "field2", now)
   updateNumericSensor(state, rawData, "flow_rate", "field5", now)
   updateNumericSensor(state, rawData, "pressure", "field4", now)
-  if (Object.prototype.hasOwnProperty.call(rawData, "water_Y2")) state.pumpState = Number(rawData.water_Y2) === 1 ? "on" : "off"
-  if (Object.prototype.hasOwnProperty.call(rawData, "heat_Y1")) state.heaterState = Number(rawData.heat_Y1) === 1 ? "on" : "off"
-  if (rawData.c_time !== undefined || rawData.time !== undefined) state.lastSensors.c_time = rawData.c_time || rawData.time || null
   state.lastSensorTime = Math.max(...Object.values(state.sensorUpdatedAt))
 }
 
@@ -720,6 +764,9 @@ const resetFault = async (dNo) => {
   state.faultReason = null
   state.countdown = 0
   state.lowFlowStartTime = 0
+  if (state.zeroStartTime) {
+    state.zeroStartTime = { temp_in: 0, temp_out: 0, flow_rate: 0, pressure: 0 }
+  }
   state.coolingExitState = FSM_STATES.STOPPED
   notifyStatusChange(dNo)
   return { success: true, message: "故障已确认复位，系统回到停止状态" }

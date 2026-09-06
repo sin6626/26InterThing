@@ -914,3 +914,132 @@ test("安全阈值边界采用包含比较：34.5℃开启、35℃关闭、45℃
   })
   assert.equal(state.faultCode, "OVER_TEMPERATURE")
 })
+
+test("传感器拆除发0时持续超过data_timeout触发超时故障，消抖期内不误报", async () => {
+  const realNow = Date.now
+  let now = 1_800_000_600_000
+  Date.now = () => now
+  const dNo = "TEST_ZERO_SENSOR_TIMEOUT"
+  const state = waterControlEngine.getOrCreateDeviceState(dNo)
+  state.fsmState = FSM_STATES.RUNNING
+  state.pumpState = "on"
+  state.desiredPumpState = "on"
+  state.heaterState = "on"
+  state.desiredHeaterState = "on"
+
+  const published = []
+  waterControlEngine.__setMqttClientForTests({
+    connected: true,
+    publishToDevice: async (topic, payload) => {
+      published.push({ topic, payload })
+    },
+  })
+
+  try {
+    // 初始正常上报
+    await waterControlEngine.onSensorData(dNo, {
+      temp_in: 30,
+      temp_out: 33,
+      flow_rate: 1.0,
+      pressure: 80,
+      water_Y2: 1,
+      heat_Y1: 1,
+    })
+
+    // 传感器被拆除，硬件开始发 0（首次记录 zeroStartTime）
+    now += 1_000
+    await waterControlEngine.onSensorData(dNo, {
+      temp_in: 0,
+      temp_out: 0,
+      flow_rate: 1.0,
+      pressure: 80,
+      water_Y2: 1,
+      heat_Y1: 1,
+    })
+
+    // 持续为 0 经历 2 秒（从开始算累计 2 秒，未达到 3 秒超时）
+    now += 2_000
+    await waterControlEngine.onSensorData(dNo, {
+      temp_in: 0,
+      temp_out: 0,
+      flow_rate: 1.0,
+      pressure: 80,
+      water_Y2: 1,
+      heat_Y1: 1,
+    })
+    // 消抖观察期内，不应触发超时故障
+    assert.equal(state.fsmState, FSM_STATES.RUNNING)
+    assert.deepEqual(waterControlEngine.getDeviceControlStatus(dNo).staleSensors, [])
+
+    // 持续为 0 达到 4 秒（从首次发 0 累计超过 3 秒），判定超时并进入保护
+    now += 2_000
+    await waterControlEngine.onSensorData(dNo, {
+      temp_in: 0,
+      temp_out: 0,
+      flow_rate: 1.0,
+      pressure: 80,
+      water_Y2: 1,
+      heat_Y1: 1,
+    })
+    assert.equal(state.fsmState, FSM_STATES.COOLING)
+    assert.equal(state.faultCode, "SENSOR_TEMPERATURE_TIMEOUT")
+    assert.deepEqual(waterControlEngine.getDeviceControlStatus(dNo).staleSensors, ["temp_in", "temp_out"])
+    assert.equal(state.desiredHeaterState, "off")
+
+    // 传感器恢复正常水温后，离线标记清除
+    await waterControlEngine.onSensorData(dNo, {
+      temp_in: 28,
+      temp_out: 29,
+      flow_rate: 1.0,
+      pressure: 80,
+      water_Y2: 1,
+      heat_Y1: 0,
+    })
+    assert.deepEqual(waterControlEngine.getDeviceControlStatus(dNo).staleSensors, [])
+  } finally {
+    Date.now = realNow
+  }
+})
+
+test("停泵模式下水温正常、流量压力为0持续上报时不误触发超时，且允许正常启动", async () => {
+  const realNow = Date.now
+  let now = 1_800_000_700_000
+  Date.now = () => now
+  const dNo = "TEST_STOPPED_ZERO_FLOW_OK"
+  const state = waterControlEngine.getOrCreateDeviceState(dNo)
+  state.fsmState = FSM_STATES.STOPPED
+  state.pumpState = "off"
+  state.desiredPumpState = "off"
+  state.heaterState = "off"
+  state.desiredHeaterState = "off"
+
+  waterControlEngine.__setMqttClientForTests({
+    connected: true,
+    publishToDevice: async () => {},
+  })
+
+  try {
+    for (let index = 0; index < 5; index++) {
+      now += 1_000
+      await waterControlEngine.onSensorData(dNo, {
+        temp_in: 25,
+        temp_out: 25.5,
+        flow_rate: 0,
+        pressure: 0,
+        water_Y2: 0,
+        heat_Y1: 0,
+      })
+    }
+
+    // 停机状态下流量压力为0不误判为超时
+    assert.equal(state.fsmState, FSM_STATES.STOPPED)
+    assert.deepEqual(waterControlEngine.getDeviceControlStatus(dNo).staleSensors, [])
+
+    // 允许正常发起启动建流
+    const startResult = await waterControlEngine.startAuto(dNo)
+    assert.equal(startResult.success, true)
+    assert.equal(state.fsmState, FSM_STATES.BUILDING_FLOW)
+  } finally {
+    Date.now = realNow
+  }
+})

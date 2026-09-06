@@ -38,6 +38,7 @@
   - 自动动作留痕至 `t_direct_history`，故障报警留痕至 `t_error_msg`；
   - 顶部 Header 紧凑展示实时设备状态标签（`手动` / `已停止` / `建流中` / `自动运行中` / `冷却中` / `故障`）。
   - 四项关键传感器分别维护有效值和服务端接收时间，`data_timeout`统一按秒计算；状态接口会返回`staleSensors`和`sensorUpdatedAt`，缺失或非法值不再按0参与控制。
+  - 针对设备端拆除传感器后持续周期性发 0 的物理特性：引入异常零值持续计时机制（`zeroStartTime`）；水温 $\le 0℃$ 视为断线零值，流量/压力在开泵运行中 $\le 0$ 视为失流零值；持续超过 `data_timeout`（默认 3 秒）后精准标记为超时无效，杜绝水温报 0 导致控温误加热风险，停泵时静止零流量不误报。
   - 实际执行器状态只由`water_Y2`、`heat_Y1`更新，应用层下发结果单独记录为`desiredPumpState`、`desiredHeaterState`和`lastCommandStatus`。
   - 安全故障已使用结构化`faultCode`统一决策；运行失流无论加热是否开启都关加热、停泵，复合故障中超压/失流停泵优先于超温留泵散热。
   - `command_timeout`当前只表示等待MQTT发布/PUBACK的秒数，不等待设备或继电器执行ACK；发布失败/超时会抛错并记录失败历史。
