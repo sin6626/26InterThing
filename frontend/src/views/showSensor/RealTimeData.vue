@@ -1,7 +1,13 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
-import { getEchartsSensorByQuery, getSensorDataRealTime } from '@/api/sensor'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  getEchartsSensorByQuery,
+  getSensorDataRealTime,
+  getWaterFlowStatus,
+  resetWaterFlow,
+} from '@/api/sensor'
 import { useDeviceNumbers } from '@/composables/useDeviceNumbers'
 import { useSwitchStore } from '@/stores/switch'
 import {
@@ -28,6 +34,25 @@ const chartRef = ref(null)
 let chartInstance = null
 let stopWsListen = null
 let stopLifecycle = null
+
+// 水循环水流与累计总流量状态
+const flowStatus = ref({
+  flow_rate: 0,
+  flow_velocity: null,
+  velocity_status: 'unconfigured',
+  pipe_inner_diameter: null,
+  total_volume: 0,
+})
+const flowChartRef = ref(null)
+let flowChartInstance = null
+let stopWsFlowListen = null
+const flowChartLimit = 30
+const flowChartData = ref({
+  times: [],
+  flowRates: [],
+  velocities: [],
+  totalVolumes: [],
+})
 
 const mediaInfo = computed(() => sensorData.value.media || null)
 const mediaIsVideo = computed(() => mediaInfo.value?.media_type === 'video')
@@ -156,10 +181,190 @@ const renderChart = () => {
 }
 
 
-// 页面初始化或切换设备时，同时刷新卡片和图表。
+// 渲染水流分析 ECharts 图表
+const renderFlowChart = () => {
+  if (!flowChartRef.value) return
+  if (!flowChartInstance) {
+    flowChartInstance = echarts.init(flowChartRef.value)
+  }
+
+  const subtext = flowStatus.value.pipe_inner_diameter
+    ? `水管内径: ${flowStatus.value.pipe_inner_diameter} mm`
+    : '提示：未配置水管内径时暂不计算流速'
+
+  flowChartInstance.setOption(
+    {
+      title: {
+        text: '水流动态与累计流量分析',
+        subtext,
+        textStyle: { fontSize: 16, fontWeight: 600 },
+        subtextStyle: { fontSize: 12, color: '#909399' },
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'cross' },
+      },
+      legend: {
+        top: 36,
+        data: ['瞬时流量 (L/min)', '管内流速 (m/s)', '累计总流量 (L)'],
+      },
+      grid: {
+        top: 85,
+        left: '3%',
+        right: '4%',
+        bottom: 30,
+        containLabel: true,
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: flowChartData.value.times,
+      },
+      yAxis: [
+        {
+          type: 'value',
+          name: '流量 / 流速',
+          position: 'left',
+          splitLine: { lineStyle: { type: 'dashed' } },
+        },
+        {
+          type: 'value',
+          name: '累计量 (L)',
+          position: 'right',
+          splitLine: { show: false },
+        },
+      ],
+      series: [
+        {
+          name: '瞬时流量 (L/min)',
+          type: 'line',
+          smooth: true,
+          showSymbol: false,
+          itemStyle: { color: '#0284c7' },
+          lineStyle: { width: 2 },
+          data: flowChartData.value.flowRates,
+        },
+        {
+          name: '管内流速 (m/s)',
+          type: 'line',
+          smooth: true,
+          showSymbol: false,
+          connectNulls: false,
+          itemStyle: { color: '#10b981' },
+          lineStyle: { width: 2 },
+          data: flowChartData.value.velocities,
+        },
+        {
+          name: '累计总流量 (L)',
+          type: 'line',
+          smooth: true,
+          showSymbol: false,
+          yAxisIndex: 1,
+          itemStyle: { color: '#f97316' },
+          lineStyle: { width: 2.5 },
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: 'rgba(249, 115, 22, 0.25)' },
+              { offset: 1, color: 'rgba(249, 115, 22, 0.02)' },
+            ]),
+          },
+          data: flowChartData.value.totalVolumes,
+        },
+      ],
+    },
+    true,
+  )
+}
+
+// 获取当前设备水流与累计流量状态
+const fetchFlowStatus = async () => {
+  const dNo = selectedDeviceNo.value || undefined
+  if (!dNo) return
+  try {
+    const res = await getWaterFlowStatus(dNo)
+    if (res.data) {
+      flowStatus.value = res.data
+    }
+  } catch {
+    // 忽略获取失败
+  }
+}
+
+// 累计总流量清零二次确认与调用
+const handleResetFlow = async () => {
+  const dNo = selectedDeviceNo.value || sensorData.value.values['编号']
+  if (!dNo) {
+    ElMessage.warning('请先选择设备编号')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定要将设备【${dNo}】的累计总流量清零吗？此操作将记录到操作历史中，不可撤销。`,
+      '累计流量清零二次确认',
+      {
+        confirmButtonText: '确定清零',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+    const res = await resetWaterFlow(dNo)
+    if (res.data) {
+      flowStatus.value = res.data
+      if (flowChartData.value.totalVolumes.length) {
+        flowChartData.value.totalVolumes[flowChartData.value.totalVolumes.length - 1] = 0
+        renderFlowChart()
+      }
+    }
+    ElMessage.success('累计总流量已成功清零')
+  } catch (err) {
+    if (err !== 'cancel') {
+      ElMessage.error(err.response?.data?.message || err.message || '清零操作失败')
+    }
+  }
+}
+
+// 推入水流与累计数据点
+const pushFlowPoint = (payload) => {
+  const timeStr = payload.updated_at
+    ? new Date(payload.updated_at).toLocaleTimeString('zh-CN', { hour12: false })
+    : new Date().toLocaleTimeString('zh-CN', { hour12: false })
+
+  const d = flowChartData.value
+  d.times.push(timeStr)
+  d.flowRates.push(payload.flow_rate ?? 0)
+  d.velocities.push(payload.flow_velocity ?? null)
+  d.totalVolumes.push(payload.total_volume ?? 0)
+
+  if (d.times.length > flowChartLimit) {
+    d.times.shift()
+    d.flowRates.shift()
+    d.velocities.shift()
+    d.totalVolumes.shift()
+  }
+
+  renderFlowChart()
+}
+
+// 页面初始化或切换设备时，同时刷新卡片、图表与流量状态。
 const loadAll = async () => {
-  await Promise.all([fetchRealtime(), fetchChartData()])
+  flowChartData.value = {
+    times: [],
+    flowRates: [],
+    velocities: [],
+    totalVolumes: [],
+  }
+  await Promise.all([fetchRealtime(), fetchChartData(), fetchFlowStatus()])
   renderChart()
+  if (flowStatus.value && selectedDeviceNo.value) {
+    pushFlowPoint({
+      updated_at: new Date().toISOString(),
+      flow_rate: flowStatus.value.flow_rate,
+      flow_velocity: flowStatus.value.flow_velocity,
+      total_volume: flowStatus.value.total_volume,
+    })
+  } else {
+    renderFlowChart()
+  }
 }
 
 
@@ -202,10 +407,29 @@ onMounted(async () => {
     updateSensorData(payload)
   })
 
+  // 消费当前选中设备的水流与累计流量广播
+  stopWsFlowListen = onRealtimeMessage('water_flow_realtime', (payload) => {
+    if (
+      selectedDeviceNo.value &&
+      String(payload?.d_no) !== String(selectedDeviceNo.value)
+    ) {
+      return
+    }
+    flowStatus.value = {
+      flow_rate: payload.flow_rate ?? 0,
+      flow_velocity: payload.flow_velocity ?? null,
+      velocity_status: payload.velocity_status ?? 'unconfigured',
+      pipe_inner_diameter: payload.pipe_inner_diameter ?? null,
+      total_volume: payload.total_volume ?? 0,
+    }
+    pushFlowPoint(payload)
+  })
+
   // 重连后主动补拉一次图表，弥补断线期间可能漏掉的数据点。
   stopLifecycle = onWsLifecycle((type) => {
     if (type === 'reconnected') {
       fetchChartData().then(() => renderChart())
+      fetchFlowStatus().then(() => renderFlowChart())
     }
   })
 })
@@ -213,6 +437,7 @@ onMounted(async () => {
 
 const handleResize = () => {
   chartInstance?.resize()
+  flowChartInstance?.resize()
 }
 
 
@@ -222,9 +447,17 @@ onBeforeUnmount(() => {
     chartInstance.dispose()
     chartInstance = null
   }
+  if (flowChartInstance) {
+    flowChartInstance.dispose()
+    flowChartInstance = null
+  }
   if (stopWsListen) {
     stopWsListen()
     stopWsListen = null
+  }
+  if (stopWsFlowListen) {
+    stopWsFlowListen()
+    stopWsFlowListen = null
   }
   if (stopLifecycle) {
     stopLifecycle()
@@ -272,6 +505,35 @@ onBeforeUnmount(() => {
         <el-tag>{{ sensorData.values[item.f_name] ?? '暂无' }}</el-tag>
       </el-descriptions-item>
 
+      <el-descriptions-item label="管内流速">
+        <template v-if="flowStatus.velocity_status === 'ok' && flowStatus.flow_velocity !== null">
+          <el-tag type="success">
+            {{ flowStatus.flow_velocity }} m/s
+            <span v-if="flowStatus.pipe_inner_diameter" class="pipe-sub">
+              (内径 {{ flowStatus.pipe_inner_diameter }}mm)
+            </span>
+          </el-tag>
+        </template>
+        <template v-else>
+          <el-tag type="warning">待配置水管内径</el-tag>
+        </template>
+      </el-descriptions-item>
+
+      <el-descriptions-item label="累计总流量">
+        <div class="flow-total-cell">
+          <el-tag type="info" class="flow-volume-tag">{{ flowStatus.total_volume }} L</el-tag>
+          <el-button
+            size="small"
+            type="danger"
+            plain
+            class="reset-btn"
+            @click="handleResetFlow"
+          >
+            清零
+          </el-button>
+        </div>
+      </el-descriptions-item>
+
       <el-descriptions-item label="是否在线">
         <el-tag>{{ sensorData.values['是否在线'] || '未启用心跳' }}</el-tag>
       </el-descriptions-item>
@@ -306,6 +568,16 @@ onBeforeUnmount(() => {
       <div ref="chartRef" class="chart"></div>
       <el-empty v-if="!(echartsData.xAxisData || []).length" description="暂无图表数据" />
     </div>
+
+    <el-card class="flow-chart-card" shadow="never">
+      <div class="flow-chart-container">
+        <div ref="flowChartRef" class="chart"></div>
+        <el-empty
+          v-if="!flowChartData.times.length"
+          description="等待水流与累计流量数据..."
+        />
+      </div>
+    </el-card>
 
     <el-dialog v-model="previewVisible" title="视频预览" width="70%">
       <video
@@ -373,5 +645,35 @@ onBeforeUnmount(() => {
 :deep(.el-descriptions__label) {
   height: 72px;
   vertical-align: middle;
+}
+
+.flow-chart-card {
+  margin-top: 24px;
+}
+
+.flow-chart-container {
+  position: relative;
+  width: 100%;
+  height: 440px;
+}
+
+.flow-total-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.flow-volume-tag {
+  font-weight: 600;
+}
+
+.pipe-sub {
+  margin-left: 4px;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.reset-btn {
+  margin-left: 4px;
 }
 </style>

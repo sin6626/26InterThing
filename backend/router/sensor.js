@@ -77,4 +77,10 @@ router.post("/waterControl/stop", direct_hander.stopWaterControl);
 router.post("/waterControl/reset", direct_hander.resetWaterControlFault);
 router.get("/waterControl/status/:d_no", direct_hander.getWaterControlStatus);
 
+// ---------------------------------------------------
+// 水循环累计流量与流速相关接口：
+const waterFlow_hander = require("../router_handler/waterFlow");
+router.get("/waterFlow/status/:d_no", waterFlow_hander.getWaterFlowStatus);
+router.post("/waterFlow/reset", waterFlow_hander.resetWaterFlow);
+
 module.exports = router;

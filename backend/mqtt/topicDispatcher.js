@@ -65,6 +65,13 @@ const createTopicDispatcher = ({
           console.error("[WaterControl] 传感器数据处理异常:", err)
         })
       }
+
+      try {
+        const waterFlowService = require("../services/waterFlowService")
+        Promise.resolve(waterFlowService.onSensorFlowData(deviceId, data)).catch((err) => {
+          console.error("[WaterFlow] 流量计算处理异常:", err)
+        })
+      } catch {}
       return
     }
 

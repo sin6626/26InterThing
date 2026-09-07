@@ -131,3 +131,13 @@ export const resetWaterControlFault = (d_no, confirmed = false) => {
 export const getWaterControlStatus = (d_no) => {
   return request.get(`/api/waterControl/status/${d_no}`)
 }
+
+// ---------------------------------------------------
+// 水循环累计流量与流速接口：
+export const getWaterFlowStatus = (d_no) => {
+  return request.get(`/api/waterFlow/status/${d_no}`)
+}
+
+export const resetWaterFlow = (d_no) => {
+  return request.post('/api/waterFlow/reset', { d_no })
+}

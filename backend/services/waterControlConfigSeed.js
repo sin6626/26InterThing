@@ -12,6 +12,7 @@ const WATER_CONTROL_CONFIGS = [
   [20, 0, "on", "MQTT发布超时时间（秒）", "2", "1", "command_timeout", null, "2"],
   [21, 0, "off", "水泵开关", "1", "1", "pump", "device/direct", "off"],
   [22, 0, "off", "加热开关", "1", "1", "heater", "device/direct", "off"],
+  [25, 0, "on", "水管内径（毫米）", "2", "1", "pipe_inner_diameter", null, "15"],
 ]
 
 const ensureWaterControlConfigs = async (queryImpl) => {

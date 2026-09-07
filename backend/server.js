@@ -96,9 +96,12 @@ ensureControlConfigSchema()
     console.error("初始化水循环控制配置失败:", error.message)
   })
 
-// 启动水循环自动控制引擎。
+// 启动水循环自动控制引擎与累计流量服务。
 const { initEngine: initWaterControlEngine } = require("./services/waterControlEngine")
 initWaterControlEngine()
+
+const { initWaterFlow } = require("./services/waterFlowService")
+initWaterFlow()
 
 // 启动 HTTP 服务。
 const server = app.listen(port, () => {
