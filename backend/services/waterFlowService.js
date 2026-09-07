@@ -20,6 +20,8 @@ const getOrCreateState = (dNo) => {
       velocityStatus: "unconfigured",
       pipeInnerDiameter: null,
       lastSaveTime: 0,
+      flowSamples: [],
+      averageFlow1min: 0.0,
     })
   }
   return deviceFlowMap.get(dNo)
@@ -142,6 +144,18 @@ const onSensorFlowData = async (dNo, rawData, now = Date.now(), dataTimeoutSecon
   state.lastFlowRate = flowRate
   state.lastTime = dataTime
 
+  // 维护最近 60 秒滑动窗口内的流量样本
+  state.flowSamples.push({ time: dataTime, flow_rate: flowRate })
+  state.flowSamples = state.flowSamples.filter((s) => dataTime - s.time <= 60000)
+
+  // 计算最近 1 分钟平均流量 (L/min)
+  let avgFlow1min = flowRate
+  if (state.flowSamples.length > 0) {
+    const sumFlow = state.flowSamples.reduce((acc, cur) => acc + cur.flow_rate, 0)
+    avgFlow1min = sumFlow / state.flowSamples.length
+  }
+  state.averageFlow1min = Number(avgFlow1min.toFixed(2))
+
   // 计算管内流速
   const diameterMm = await getPipeInnerDiameter(dNo)
   state.pipeInnerDiameter = diameterMm
@@ -162,6 +176,7 @@ const onSensorFlowData = async (dNo, rawData, now = Date.now(), dataTimeoutSecon
   const result = {
     d_no: dNo,
     flow_rate: Number(flowRate.toFixed(3)),
+    average_flow_1min: state.averageFlow1min,
     flow_velocity: state.lastVelocity,
     velocity_status: state.velocityStatus,
     pipe_inner_diameter: state.pipeInnerDiameter,
@@ -199,6 +214,7 @@ const getFlowStatus = async (dNo) => {
   return {
     d_no: dNo,
     flow_rate: Number(state.lastFlowRate.toFixed(3)),
+    average_flow_1min: state.averageFlow1min ?? Number(state.lastFlowRate.toFixed(2)),
     flow_velocity: state.lastVelocity,
     velocity_status: state.velocityStatus,
     pipe_inner_diameter: state.pipeInnerDiameter,

@@ -53,6 +53,7 @@ let stopLifecycle = null
 // 水循环水流与累计总流量状态 (大纲 4.1 节)
 const flowStatus = ref({
   flow_rate: 0,
+  average_flow_1min: 0,
   flow_velocity: null,
   velocity_status: 'unconfigured',
   pipe_inner_diameter: null,
@@ -621,6 +622,7 @@ onMounted(async () => {
     }
     flowStatus.value = {
       flow_rate: payload.flow_rate ?? 0,
+      average_flow_1min: payload.average_flow_1min ?? payload.flow_rate ?? 0,
       flow_velocity: payload.flow_velocity ?? null,
       velocity_status: payload.velocity_status ?? 'unconfigured',
       pipe_inner_diameter: payload.pipe_inner_diameter ?? null,
@@ -754,6 +756,12 @@ onBeforeUnmount(() => {
         <template v-else>
           <el-tag type="warning">待配置水管内径</el-tag>
         </template>
+      </el-descriptions-item>
+
+      <el-descriptions-item label="近1分钟平均流量">
+        <el-tag type="primary">
+          {{ flowStatus.average_flow_1min ?? flowStatus.flow_rate ?? 0 }} L/min
+        </el-tag>
       </el-descriptions-item>
 
       <el-descriptions-item label="累计总流量">
