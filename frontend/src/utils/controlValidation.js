@@ -53,4 +53,11 @@ export const validateControlValue = (data, tree) => {
   ) {
     throw new Error('温度回差必须小于目标温度')
   }
+  if (
+    Number.isFinite(values.min_operating_pressure)
+    && Number.isFinite(values.max_safe_pressure)
+    && values.min_operating_pressure >= values.max_safe_pressure
+  ) {
+    throw new Error('参考最低压力必须小于最大安全压力')
+  }
 }

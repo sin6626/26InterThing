@@ -44,6 +44,13 @@ const staleSensorText = computed(() => (
   (currentControl.value?.staleSensors || []).map((field) => sensorLabels[field] || field).join('、')
 ))
 
+const getDiagnosisTagType = (level) => {
+  if (level === 'error') return 'danger'
+  if (level === 'warning') return 'warning'
+  if (level === 'success') return 'success'
+  return 'info'
+}
+
 // 以某台设备为参照，同时拿到全局默认树和单设备覆盖树。
 const getList = async (no) => {
   const selectedNo = no || options.value[0]?.value || ''
@@ -246,6 +253,18 @@ onMounted(async () => {
       <span>水泵实际/期望：{{ currentControl.pumpState }} / {{ currentControl.desiredPumpState }}</span>
       <span>加热实际/期望：{{ currentControl.heaterState }} / {{ currentControl.desiredHeaterState }}</span>
       <span v-if="currentControl.countdown > 0">剩余 {{ currentControl.countdown }} 秒</span>
+      <el-tooltip
+        v-if="currentControl.hydraulicDiagnosis && currentControl.hydraulicDiagnosis.code !== 'STOPPED'"
+        :content="currentControl.hydraulicDiagnosis.detail"
+        placement="top"
+      >
+        <el-tag
+          :type="getDiagnosisTagType(currentControl.hydraulicDiagnosis.level)"
+          effect="light"
+        >
+          水力诊断：{{ currentControl.hydraulicDiagnosis.name }}
+        </el-tag>
+      </el-tooltip>
       <span v-if="staleSensorText" class="danger-text">数据异常：{{ staleSensorText }}</span>
       <span v-if="currentControl.lastCommandStatus?.status === 'failed'" class="danger-text">
         发布失败：{{ currentControl.lastCommandStatus.error }}

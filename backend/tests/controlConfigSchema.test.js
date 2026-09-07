@@ -36,6 +36,8 @@ test("ensureWaterControlConfigs idempotently seeds every required water control 
       "pump",
       "heater",
       "pipe_inner_diameter",
+      "min_operating_pressure",
+      "pressure_flow_diagnosis_confirm_time",
     ],
   )
   assert.ok(calls.every((call) => !call.sql.includes("ON DUPLICATE KEY UPDATE")))

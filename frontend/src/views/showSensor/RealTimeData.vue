@@ -9,6 +9,7 @@ import {
   resetWaterFlow,
 } from '@/api/sensor'
 import { useDeviceNumbers } from '@/composables/useDeviceNumbers'
+import { useDeviceStatus } from '@/composables/useDeviceStatus'
 import { useSwitchStore } from '@/stores/switch'
 import {
   applyMinuteRealtimeUpdate,
@@ -28,7 +29,20 @@ const echartsData = ref({ xAxisData: [], seriesData: [], minuteStats: {} })
 const previewVisible = ref(false)
 
 const { numbers: deviceNumbers, fetchDeviceNumbers } = useDeviceNumbers()
+const { deviceStatusMap } = useDeviceStatus()
 const switchStore = useSwitchStore()
+
+const currentHydraulicDiagnosis = computed(() => {
+  const dNo = selectedDeviceNo.value || Object.keys(deviceStatusMap.value)[0] || ''
+  return deviceStatusMap.value[dNo]?.control?.hydraulicDiagnosis || null
+})
+
+const getDiagnosisTagType = (level) => {
+  if (level === 'error') return 'danger'
+  if (level === 'warning') return 'warning'
+  if (level === 'success') return 'success'
+  return 'info'
+}
 
 const chartRef = ref(null)
 let chartInstance = null
@@ -536,6 +550,19 @@ onBeforeUnmount(() => {
 
       <el-descriptions-item label="是否在线">
         <el-tag>{{ sensorData.values['是否在线'] || '未启用心跳' }}</el-tag>
+      </el-descriptions-item>
+
+      <el-descriptions-item label="水力运行诊断">
+        <template v-if="currentHydraulicDiagnosis">
+          <el-tooltip :content="currentHydraulicDiagnosis.detail" placement="top">
+            <el-tag :type="getDiagnosisTagType(currentHydraulicDiagnosis.level)">
+              {{ currentHydraulicDiagnosis.name }}
+            </el-tag>
+          </el-tooltip>
+        </template>
+        <template v-else>
+          <el-tag type="info">未诊断</el-tag>
+        </template>
       </el-descriptions-item>
 
       <el-descriptions-item label="更新时间">

@@ -1,5 +1,10 @@
 const { buildDeviceCommandEnvelope } = require("../mqtt/commandMapper")
 const { waitForPublish } = require("../mqtt/publishTimeout")
+const {
+  evaluateHydraulicStatus,
+  getDeviceDiagnosis,
+  resetDeviceDiagnosis,
+} = require("./hydraulicDiagnosisService")
 
 const DEFAULT_CONTROL_PARAMS = {
   target_temperature: 35.0,
@@ -12,6 +17,8 @@ const DEFAULT_CONTROL_PARAMS = {
   cooling_delay: 10,
   data_timeout: 3,
   command_timeout: 2,
+  min_operating_pressure: 20.0,
+  pressure_flow_diagnosis_confirm_time: 2.0,
 }
 
 const FSM_STATES = {
@@ -287,6 +294,7 @@ const getDeviceControlStatus = (dNo) => {
     lastSensors: { ...state.lastSensors },
     sensorUpdatedAt: { ...state.sensorUpdatedAt },
     staleSensors: getStaleSensors(state),
+    hydraulicDiagnosis: getDeviceDiagnosis(dNo),
   }
 }
 
@@ -533,7 +541,7 @@ const handleSensorTimeouts = async (dNo, params, now) => {
   return true
 }
 
-const inspectSafetyConditions = (state, params, now) => {
+const inspectSafetyConditions = (state, params, now, hydraulicDiagnosis = null) => {
   const pumpActive = state.pumpState === "on"
   const flow = state.lastSensors.flow_rate
   const pressure = state.lastSensors.pressure
@@ -555,15 +563,36 @@ const inspectSafetyConditions = (state, params, now) => {
     state.lowFlowStartTime = 0
   }
 
+  // 过程 4：水泵运行中检测到水力断崖骤降（疑似脱落/严重泄漏）
+  if (pumpActive && hydraulicDiagnosis && hydraulicDiagnosis.code === "HYDRAULIC_LEAK_OR_BURST") {
+    return {
+      code: FAULT_CODES.LOW_FLOW,
+      reason: `水力骤降(${hydraulicDiagnosis.detail}) [联合诊断: ${hydraulicDiagnosis.name}]`,
+      stopPump: true,
+    }
+  }
+
   if (overPressure) {
+    const diagSuffix = hydraulicDiagnosis && hydraulicDiagnosis.code === "HYDRAULIC_BLOCKAGE"
+      ? ` [联合诊断: ${hydraulicDiagnosis.name}]`
+      : ""
     const suffix = overTemperature ? "，同时检测到温度超限" : ""
-    return { code: FAULT_CODES.OVER_PRESSURE, reason: `管路超压(${pressure.toFixed(1)}kPa >= ${params.max_safe_pressure}kPa)${suffix}`, stopPump: true }
+    return { code: FAULT_CODES.OVER_PRESSURE, reason: `管路超压(${pressure.toFixed(1)}kPa >= ${params.max_safe_pressure}kPa)${suffix}${diagSuffix}`, stopPump: true }
   }
   if (unsafeCoolingFlow) {
     return { code: FAULT_CODES.LOW_FLOW, reason: `冷却期间流量过低(${flow.toFixed(2)}L/min < ${params.min_safe_flow}L/min)`, stopPump: true }
   }
   if (lowFlowConfirmed) {
-    return { code: FAULT_CODES.LOW_FLOW, reason: `运行中流量过低(${flow.toFixed(2)}L/min < ${params.min_safe_flow}L/min)`, stopPump: true }
+    let diagSuffix = ""
+    if (hydraulicDiagnosis && [
+      "HYDRAULIC_PUMP_ABNORMAL",
+      "HYDRAULIC_SENSOR_ANOMALY",
+      "HYDRAULIC_BLOCKAGE",
+      "HYDRAULIC_LEAK_OR_BURST",
+    ].includes(hydraulicDiagnosis.code)) {
+      diagSuffix = ` [联合诊断: ${hydraulicDiagnosis.name}]`
+    }
+    return { code: FAULT_CODES.LOW_FLOW, reason: `运行中流量过低(${flow.toFixed(2)}L/min < ${params.min_safe_flow}L/min)${diagSuffix}`, stopPump: true }
   }
   if (overTemperature) {
     const canCoolSafely = pumpActive && flow >= params.min_safe_flow && pressure < params.max_safe_pressure
@@ -615,7 +644,19 @@ const onSensorData = async (dNo, rawData) => {
     return
   }
   if (await handleSensorTimeouts(dNo, params, now)) return
-  const safetyFault = inspectSafetyConditions(state, params, now)
+  const hydraulicDiagnosis = evaluateHydraulicStatus(
+    dNo,
+    {
+      pumpState: state.pumpState,
+      flowRate: state.lastSensors.flow_rate,
+      pressure: state.lastSensors.pressure,
+      isBuildingFlow: state.fsmState === FSM_STATES.BUILDING_FLOW,
+      staleSensors: getStaleSensors(state, now, params.data_timeout),
+    },
+    params,
+    now,
+  )
+  const safetyFault = inspectSafetyConditions(state, params, now, hydraulicDiagnosis)
   if (safetyFault) {
     await triggerFault(dNo, safetyFault, { stopPump: safetyFault.stopPump })
     return
@@ -783,6 +824,7 @@ const resetFault = async (dNo) => {
     state.zeroStartTime = { temp_in: 0, temp_out: 0, flow_rate: 0, pressure: 0 }
   }
   state.coolingExitState = FSM_STATES.STOPPED
+  resetDeviceDiagnosis(dNo)
   notifyStatusChange(dNo)
   return { success: true, message: "故障已确认复位，系统回到停止状态" }
 }

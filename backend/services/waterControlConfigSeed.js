@@ -13,6 +13,8 @@ const WATER_CONTROL_CONFIGS = [
   [21, 0, "off", "水泵开关", "1", "1", "pump", "device/direct", "off"],
   [22, 0, "off", "加热开关", "1", "1", "heater", "device/direct", "off"],
   [25, 0, "on", "水管内径（毫米）", "2", "1", "pipe_inner_diameter", null, "15"],
+  [28, 0, "on", "参考最低压力", "2", "1", "min_operating_pressure", null, "20"],
+  [29, 0, "on", "水流压力联合诊断时间", "2", "1", "pressure_flow_diagnosis_confirm_time", null, "2"],
 ]
 
 const ensureWaterControlConfigs = async (queryImpl) => {
