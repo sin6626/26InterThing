@@ -6,6 +6,10 @@ const {
   lockFaultDiagnosis,
   resetDeviceDiagnosis,
 } = require("./hydraulicDiagnosisService")
+const {
+  ensureErrorMessageMappings,
+  getRuleErrorMapping,
+} = require("./errorMessageMapping")
 
 const DEFAULT_CONTROL_PARAMS = {
   target_temperature: 35.0,
@@ -324,31 +328,46 @@ const notifyStatusChange = (dNo) => {
   }
 }
 
-const FAULT_CODE_TO_ERROR_MAP = {
-  [FAULT_CODES.OVER_PRESSURE]: { e_no: "OVER_PRESSURE", type: "6" },
-  [FAULT_CODES.OVER_TEMPERATURE]: { e_no: "OVER_TEMPERATURE", type: "6" },
-  [FAULT_CODES.LOW_FLOW]: { e_no: "LOW_FLOW", type: "6" },
-  [FAULT_CODES.BUILD_FLOW_TIMEOUT]: { e_no: "BUILD_FLOW_TIMEOUT", type: "6" },
-  [FAULT_CODES.SENSOR_FLOW_TIMEOUT]: { e_no: "SENSOR_FLOW_TIMEOUT", type: "3" },
-  [FAULT_CODES.SENSOR_PRESSURE_TIMEOUT]: { e_no: "SENSOR_PRESSURE_TIMEOUT", type: "3" },
-  [FAULT_CODES.SENSOR_TEMPERATURE_TIMEOUT]: { e_no: "SENSOR_TEMPERATURE_TIMEOUT", type: "3" },
-  [FAULT_CODES.COMMAND_PUBLISH_FAILED]: { e_no: "COMMAND_PUBLISH_FAILED", type: "2" },
-}
-
-const recordFault = async (dNo, faultCode, reason) => {
+const recordFault = async (dNo, faultCode, reason, extraHydraulicDiagnosis = null) => {
   const nowTime = new Date().toLocaleString()
   console.warn(`[WaterControl][${faultCode}] 设备 ${dNo}: ${reason}`)
 
-  const errorMapping = FAULT_CODE_TO_ERROR_MAP[faultCode] || { e_no: faultCode, type: "6" }
-  const eNo = errorMapping.e_no
-  const errorType = errorMapping.type
+  // 1. 确定后台规则反查的 key：若存在具体水力联合诊断（过程一~四），优先以水力诊断代码为准
+  const hydraulicDiagnosis = extraHydraulicDiagnosis || getDeviceDiagnosis(dNo)
+  let ruleKey = faultCode
+  if (hydraulicDiagnosis && [
+    "HYDRAULIC_BLOCKAGE",
+    "HYDRAULIC_PUMP_ABNORMAL",
+    "HYDRAULIC_SENSOR_ANOMALY",
+    "HYDRAULIC_LEAK_OR_BURST",
+  ].includes(hydraulicDiagnosis.code)) {
+    ruleKey = hydraulicDiagnosis.code
+  }
+
+  // 2. 动态读取后台 t_error_code_mapper 用户配置（带2秒内存缓存，即改即生效）
+  let errorMapping = null
+  try {
+    errorMapping = await getRuleErrorMapping(ruleKey)
+  } catch (err) {
+    console.warn("[WaterControl] 读取错误码语义映射异常，使用兜底:", err.message)
+    errorMapping = { e_no: ruleKey, type: "6", e_msg: reason }
+  }
+
+  const eNo = errorMapping.e_no || ruleKey
+  const errorType = String(errorMapping.type || "6")
+
+  // 3. 错误信息生成：以后台配置的中文描述为主，附带实测原因细节
+  let finalMsg = errorMapping.e_msg || reason
+  if (reason && !reason.includes(finalMsg)) {
+    finalMsg = `${finalMsg} (${reason})`
+  }
 
   if (typeof configLoaderDep !== "function") {
     try {
       const { query } = require("../repositories/query")
       await query(
         "INSERT INTO t_error_msg (d_no, c_time, e_msg, e_no, type) VALUES (?, NOW(), ?, ?, ?)",
-        [dNo, `安全保护: ${reason}`, eNo, errorType],
+        [dNo, finalMsg, eNo, errorType],
       )
     } catch (error) {
       console.error(`[WaterControl] 写入设备 ${dNo} 故障失败:`, error.message)
@@ -364,8 +383,8 @@ const recordFault = async (dNo, faultCode, reason) => {
     }
   }
   if (typeof broadcast === "function") {
-    broadcast("error_realtime", { d_no: dNo, e_no: eNo, type: errorType, e_msg: `安全保护: ${reason}`, c_time: nowTime })
-    broadcast("alarm_realtime", { d_no: dNo, code: Number(errorType) || 6, level: "error", text: `安全保护: ${reason}`, updated_at: nowTime })
+    broadcast("error_realtime", { d_no: dNo, e_no: eNo, type: errorType, e_msg: finalMsg, c_time: nowTime })
+    broadcast("alarm_realtime", { d_no: dNo, code: Number(errorType) || 6, level: "error", text: finalMsg, updated_at: nowTime })
   }
 }
 
@@ -839,6 +858,7 @@ const resetFault = async (dNo) => {
 
 const initEngine = () => {
   syncAllDeviceConfigs().catch((error) => console.error("[WaterControl] 初始化配置同步失败:", error.message))
+  ensureErrorMessageMappings().catch((error) => console.error("[WaterControl] 初始化错误码映射失败:", error.message))
   if (!timerId) {
     timerId = setInterval(() => watchdogTick().catch((error) => console.error("[WaterControl] Watchdog error:", error)), 1000)
     if (typeof timerId.unref === "function") timerId.unref()

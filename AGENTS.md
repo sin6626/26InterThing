@@ -74,6 +74,10 @@
   - 故障态诊断锁定机制：引入 `lockedFaultDiagnosis` 锁定机制，停机保护触发后原子级锁定当前诊断结论，防止水泵关闭后被误重置为正常或静止态，持续在界面呈现红色告警 Tag 直至人工复位；
   - 故障告警深度联动：超压、失流等安全停机保护触发时，将水力联合诊断结论自动融合进 `faultReason` 与 `t_error_msg`；
   - 参数与界面展示闭环：扩展 `min_operating_pressure`（最低参考压力）与 `pressure_flow_diagnosis_confirm_time`（诊断确认时间）并加入数值居中校验白名单；【指令信息】页与【实时数据】页同步展示动态水力诊断状态 Tag 与详细成因 tooltip。
+- 错误码语义映射后台驱动与报错联动机制：
+  - 后台配置中心联动：底层表 `t_error_code_mapper` 完整补齐 4.2 节水力联合诊断过程一~四（`HYDRAULIC_BLOCKAGE`、`HYDRAULIC_PUMP_ABNORMAL`、`HYDRAULIC_SENSOR_ANOMALY`、`HYDRAULIC_LEAK_OR_BURST`）及常规安全保护规则；
+  - 动态读取与短时缓存：`recordFault` 废除硬编码常量字典，改为通过 `getRuleErrorMapping` 动态反查后台 `t_error_code_mapper`；引入 2 秒短时内存缓存兼顾故障期间高频保护与后台保存即刻生效；
+  - 题目现场改后台即驱动前台：比赛现场只需在后台管理控制台（`contest_admin` 的【错误码语义映射】）修改 `e_no`、`type` 或 `e_msg`，应用层在报警落库和 WebSocket 广播时 100% 按照后台配置的题目要求呈现。
 - 现场限制：比赛局域网禁止外网；如果题目不涉及移动应用开发，不允许使用手机。
 
 ## 2026-08-24 水循环需求实测结论
