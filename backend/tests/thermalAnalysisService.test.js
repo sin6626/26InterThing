@@ -19,9 +19,8 @@ test("thermalAnalysis: 两水箱温差与供热温差计算准确性", async () 
   )
   assert.equal(res1.temp_in, 35.0)
   assert.equal(res1.temp_out, 31.0)
-  // 两水箱温差：temp_out - temp_in = -4.0
-  assert.equal(res1.temperature_difference, -4.0)
-  // 水箱A到B有效供热温差：temp_in - temp_out = 4.0
+  // 两水箱温差绝对值：|31.0 - 35.0| = 4.0
+  assert.equal(res1.temperature_difference, 4.0)
   assert.equal(res1.heat_transfer_difference, 4.0)
 
   // 2. 水箱A 30℃，水箱B 32.5℃
@@ -30,8 +29,9 @@ test("thermalAnalysis: 两水箱温差与供热温差计算准确性", async () 
     { temp_in: 30.0, temp_out: 32.5, flow_rate: 1.0, water_Y2: 0 },
     now + 1000,
   )
+  // 两水箱温差绝对值：|32.5 - 30.0| = 2.5
   assert.equal(res2.temperature_difference, 2.5)
-  assert.equal(res2.heat_transfer_difference, -2.5)
+  assert.equal(res2.heat_transfer_difference, 2.5)
 })
 
 test("thermalAnalysis: 滑动窗口升温速度(℃/min)平滑计算", async () => {
@@ -110,14 +110,23 @@ test("thermalAnalysis: 停水与停泵安全前置保护(不虚报热功率)", a
   assert.equal(resLowFlow.power_status, "low_flow")
   assert.equal(resLowFlow.estimated_thermal_power, 0.0)
 
-  // 3. 供热温差非正 (水箱A比B还冷：temp_in 28℃, temp_out 30℃)
-  const resDirectionAnomaly = await thermalAnalysisService.onSensorThermalData(
+  // 3. 两水箱无温差 (temp_in 30℃, temp_out 30℃)
+  const resNoDiff = await thermalAnalysisService.onSensorThermalData(
     dNo,
-    { temp_in: 28.0, temp_out: 30.0, flow_rate: 2.0, water_Y2: 1 },
+    { temp_in: 30.0, temp_out: 30.0, flow_rate: 2.0, water_Y2: 1 },
     now + 2000,
   )
-  assert.equal(resDirectionAnomaly.power_status, "direction_anomaly")
-  assert.equal(resDirectionAnomaly.estimated_thermal_power, 0.0)
+  assert.equal(resNoDiff.power_status, "no_diff")
+  assert.equal(resNoDiff.estimated_thermal_power, 0.0)
+
+  // 4. 出水高于入水 (例如出水 30℃, 入水 28℃)，正常计算有效热传递功率
+  const resDiff2 = await thermalAnalysisService.onSensorThermalData(
+    dNo,
+    { temp_in: 28.0, temp_out: 30.0, flow_rate: 2.0, water_Y2: 1 },
+    now + 3000,
+  )
+  assert.equal(resDiff2.power_status, "ok")
+  assert.equal(resDiff2.estimated_thermal_power, 279.08) // 69.77 * 2.0 * 2.0 = 279.08
 })
 
 test("thermalAnalysis: WebSocket 广播与状态快照查询", async () => {

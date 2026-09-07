@@ -391,6 +391,15 @@ const renderThermalChart = () => {
 
   const subtext = `水箱A升温速: ${thermalStatus.value.heating_rate ?? 0} ℃/min | 工况: ${thermalStatus.value.power_status_text || '正常'}`
 
+  const labelIn = (() => {
+    const item = sensorData.value.metadata?.find((m) => m.p_name === 'temp_in')
+    return item?.f_name ? `${item.f_name} (℃)` : '入水温度 (℃)'
+  })()
+  const labelOut = (() => {
+    const item = sensorData.value.metadata?.find((m) => m.p_name === 'temp_out')
+    return item?.f_name ? `${item.f_name} (℃)` : '出水温度 (℃)'
+  })()
+
   thermalChartInstance.setOption(
     {
       title: {
@@ -405,7 +414,7 @@ const renderThermalChart = () => {
       },
       legend: {
         top: 56,
-        data: ['水箱A温度 (℃)', '水箱B温度 (℃)', '两水箱温差 (℃)', '估算热传递功率 (W)'],
+        data: [labelIn, labelOut, '两水箱温差 (℃)', '估算热传递功率 (W)'],
       },
       grid: {
         top: 105,
@@ -435,7 +444,7 @@ const renderThermalChart = () => {
       ],
       series: [
         {
-          name: '入水温度 (℃)',
+          name: labelIn,
           type: 'line',
           smooth: true,
           showSymbol: false,
@@ -444,7 +453,7 @@ const renderThermalChart = () => {
           data: thermalChartData.value.tempIns,
         },
         {
-          name: '出水温度 (℃)',
+          name: labelOut,
           type: 'line',
           smooth: true,
           showSymbol: false,
@@ -785,7 +794,7 @@ onBeforeUnmount(() => {
         </el-tag>
       </el-descriptions-item>
 
-      <el-descriptions-item label="水箱A升温速度">
+      <el-descriptions-item v-if="false" label="水箱A升温速度">
         <el-tag :type="thermalStatus.heating_rate > 0 ? 'success' : (thermalStatus.heating_rate < 0 ? 'primary' : 'info')">
           {{ thermalStatus.heating_rate > 0 ? `+${thermalStatus.heating_rate}` : thermalStatus.heating_rate }} ℃/min
         </el-tag>
