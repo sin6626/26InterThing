@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getEchartsSensorByQuery,
   getSensorDataRealTime,
+  getThermalStatus,
   getWaterFlowStatus,
   resetWaterFlow,
 } from '@/api/sensor'
@@ -49,7 +50,7 @@ let chartInstance = null
 let stopWsListen = null
 let stopLifecycle = null
 
-// 水循环水流与累计总流量状态
+// 水循环水流与累计总流量状态 (大纲 4.1 节)
 const flowStatus = ref({
   flow_rate: 0,
   flow_velocity: null,
@@ -66,6 +67,28 @@ const flowChartData = ref({
   flowRates: [],
   velocities: [],
   totalVolumes: [],
+})
+
+// 水循环热工效能分析状态 (大纲 4.3 节)
+const thermalStatus = ref({
+  temperature_difference: 0,
+  heat_transfer_difference: 0,
+  heating_rate: 0,
+  heating_rate_out: 0,
+  estimated_thermal_power: 0,
+  power_status: 'pump_off',
+  power_status_text: '水泵未开启',
+})
+const thermalChartRef = ref(null)
+let thermalChartInstance = null
+let stopWsThermalListen = null
+const thermalChartLimit = 30
+const thermalChartData = ref({
+  times: [],
+  tempIns: [],
+  tempOuts: [],
+  tempDiffs: [],
+  powers: [],
 })
 
 const mediaInfo = computed(() => sensorData.value.media || null)
@@ -359,7 +382,146 @@ const pushFlowPoint = (payload) => {
   renderFlowChart()
 }
 
-// 页面初始化或切换设备时，同时刷新卡片、图表与流量状态。
+// 渲染热工效能与热传递分析 ECharts 图表 (大纲 4.3 节)
+const renderThermalChart = () => {
+  if (!thermalChartRef.value) return
+  if (!thermalChartInstance) {
+    thermalChartInstance = echarts.init(thermalChartRef.value)
+  }
+
+  const subtext = `水箱A升温速: ${thermalStatus.value.heating_rate ?? 0} ℃/min | 工况: ${thermalStatus.value.power_status_text || '正常'}`
+
+  thermalChartInstance.setOption(
+    {
+      title: {
+        text: '热工效能与热传递分析',
+        subtext,
+        textStyle: { fontSize: 16, fontWeight: 600 },
+        subtextStyle: { fontSize: 12, color: '#909399' },
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'cross' },
+      },
+      legend: {
+        top: 56,
+        data: ['水箱A温度 (℃)', '水箱B温度 (℃)', '两水箱温差 (℃)', '估算热传递功率 (W)'],
+      },
+      grid: {
+        top: 105,
+        left: '3%',
+        right: '4%',
+        bottom: 30,
+        containLabel: true,
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: thermalChartData.value.times,
+      },
+      yAxis: [
+        {
+          type: 'value',
+          name: '温度 / 温差 (℃)',
+          position: 'left',
+          splitLine: { lineStyle: { type: 'dashed' } },
+        },
+        {
+          type: 'value',
+          name: '热传递功率 (W)',
+          position: 'right',
+          splitLine: { show: false },
+        },
+      ],
+      series: [
+        {
+          name: '水箱A温度 (℃)',
+          type: 'line',
+          smooth: true,
+          showSymbol: false,
+          itemStyle: { color: '#f97316' },
+          lineStyle: { width: 2 },
+          data: thermalChartData.value.tempIns,
+        },
+        {
+          name: '水箱B温度 (℃)',
+          type: 'line',
+          smooth: true,
+          showSymbol: false,
+          itemStyle: { color: '#0284c7' },
+          lineStyle: { width: 2 },
+          data: thermalChartData.value.tempOuts,
+        },
+        {
+          name: '两水箱温差 (℃)',
+          type: 'line',
+          smooth: true,
+          showSymbol: false,
+          itemStyle: { color: '#8b5cf6' },
+          lineStyle: { width: 1.5, type: 'dashed' },
+          data: thermalChartData.value.tempDiffs,
+        },
+        {
+          name: '估算热传递功率 (W)',
+          type: 'line',
+          smooth: true,
+          showSymbol: false,
+          yAxisIndex: 1,
+          itemStyle: { color: '#e11d48' },
+          lineStyle: { width: 2.5 },
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: 'rgba(225, 29, 72, 0.25)' },
+              { offset: 1, color: 'rgba(225, 29, 72, 0.02)' },
+            ]),
+          },
+          data: thermalChartData.value.powers,
+        },
+      ],
+    },
+    false,
+  )
+}
+
+// 获取当前设备热工效能状态
+const fetchThermalStatus = async () => {
+  const dNo = selectedDeviceNo.value || undefined
+  if (!dNo) return
+  try {
+    const res = await getThermalStatus(dNo)
+    if (res.data) {
+      thermalStatus.value = res.data
+    }
+  } catch {
+    // 忽略获取失败
+  }
+}
+
+// 推入热工数据点
+const pushThermalPoint = (payload) => {
+  const timeStr = payload.c_time
+    ? payload.c_time.slice(11, 19)
+    : new Date().toLocaleTimeString('zh-CN', { hour12: false })
+
+  const d = thermalChartData.value
+  d.times.push(timeStr)
+  d.tempIns.push(payload.temp_in ?? null)
+  d.tempOuts.push(payload.temp_out ?? null)
+  d.tempDiffs.push(payload.temperature_difference ?? 0)
+  d.powers.push(payload.estimated_thermal_power ?? 0)
+
+  if (d.times.length > thermalChartLimit) {
+    d.times.shift()
+    d.tempIns.shift()
+    d.tempOuts.shift()
+    d.tempDiffs.shift()
+    d.powers.shift()
+  }
+
+  renderThermalChart()
+}
+
+// 页面初始化或切换设备时，同时刷新卡片、图表、流量状态与热工状态。
 const loadAll = async () => {
   flowChartData.value = {
     times: [],
@@ -367,7 +529,14 @@ const loadAll = async () => {
     velocities: [],
     totalVolumes: [],
   }
-  await Promise.all([fetchRealtime(), fetchChartData(), fetchFlowStatus()])
+  thermalChartData.value = {
+    times: [],
+    tempIns: [],
+    tempOuts: [],
+    tempDiffs: [],
+    powers: [],
+  }
+  await Promise.all([fetchRealtime(), fetchChartData(), fetchFlowStatus(), fetchThermalStatus()])
   renderChart()
   if (flowStatus.value && selectedDeviceNo.value) {
     pushFlowPoint({
@@ -378,6 +547,18 @@ const loadAll = async () => {
     })
   } else {
     renderFlowChart()
+  }
+
+  if (thermalStatus.value && selectedDeviceNo.value) {
+    pushThermalPoint({
+      c_time: new Date().toISOString(),
+      temp_in: thermalStatus.value.temp_in,
+      temp_out: thermalStatus.value.temp_out,
+      temperature_difference: thermalStatus.value.temperature_difference,
+      estimated_thermal_power: thermalStatus.value.estimated_thermal_power,
+    })
+  } else {
+    renderThermalChart()
   }
 }
 
@@ -439,11 +620,35 @@ onMounted(async () => {
     pushFlowPoint(payload)
   })
 
+  // 消费当前选中设备的热工效能广播 (大纲 4.3 节)
+  stopWsThermalListen = onRealtimeMessage('thermal_realtime', (payload) => {
+    if (
+      selectedDeviceNo.value &&
+      String(payload?.d_no) !== String(selectedDeviceNo.value)
+    ) {
+      return
+    }
+    thermalStatus.value = {
+      temperature_difference: payload.temperature_difference ?? 0,
+      heat_transfer_difference: payload.heat_transfer_difference ?? 0,
+      heating_rate: payload.heating_rate ?? 0,
+      heating_rate_out: payload.heating_rate_out ?? 0,
+      estimated_thermal_power: payload.estimated_thermal_power ?? 0,
+      power_status: payload.power_status ?? 'pump_off',
+      power_status_text: payload.power_status_text ?? '水泵未开启',
+      temp_in: payload.temp_in,
+      temp_out: payload.temp_out,
+      flow_rate: payload.flow_rate,
+    }
+    pushThermalPoint(payload)
+  })
+
   // 重连后主动补拉一次图表，弥补断线期间可能漏掉的数据点。
   stopLifecycle = onWsLifecycle((type) => {
     if (type === 'reconnected') {
       fetchChartData().then(() => renderChart())
       fetchFlowStatus().then(() => renderFlowChart())
+      fetchThermalStatus().then(() => renderThermalChart())
     }
   })
 })
@@ -452,6 +657,7 @@ onMounted(async () => {
 const handleResize = () => {
   chartInstance?.resize()
   flowChartInstance?.resize()
+  thermalChartInstance?.resize()
 }
 
 
@@ -465,6 +671,10 @@ onBeforeUnmount(() => {
     flowChartInstance.dispose()
     flowChartInstance = null
   }
+  if (thermalChartInstance) {
+    thermalChartInstance.dispose()
+    thermalChartInstance = null
+  }
   if (stopWsListen) {
     stopWsListen()
     stopWsListen = null
@@ -472,6 +682,10 @@ onBeforeUnmount(() => {
   if (stopWsFlowListen) {
     stopWsFlowListen()
     stopWsFlowListen = null
+  }
+  if (stopWsThermalListen) {
+    stopWsThermalListen()
+    stopWsThermalListen = null
   }
   if (stopLifecycle) {
     stopLifecycle()
@@ -565,6 +779,27 @@ onBeforeUnmount(() => {
         </template>
       </el-descriptions-item>
 
+      <el-descriptions-item label="两水箱温差">
+        <el-tag type="info">
+          {{ thermalStatus.temperature_difference }} ℃
+        </el-tag>
+      </el-descriptions-item>
+
+      <el-descriptions-item label="水箱A升温速度">
+        <el-tag :type="thermalStatus.heating_rate > 0 ? 'success' : (thermalStatus.heating_rate < 0 ? 'primary' : 'info')">
+          {{ thermalStatus.heating_rate > 0 ? `+${thermalStatus.heating_rate}` : thermalStatus.heating_rate }} ℃/min
+        </el-tag>
+      </el-descriptions-item>
+
+      <el-descriptions-item label="循环水估算热功率">
+        <el-tooltip :content="thermalStatus.power_status_text" placement="top">
+          <el-tag :type="thermalStatus.power_status === 'ok' ? 'danger' : 'info'">
+            {{ thermalStatus.estimated_thermal_power }} W
+            <span class="pipe-sub">({{ thermalStatus.power_status_text }})</span>
+          </el-tag>
+        </el-tooltip>
+      </el-descriptions-item>
+
       <el-descriptions-item label="更新时间">
         <el-tag>{{ sensorData.values['更新时间'] || '暂无' }}</el-tag>
       </el-descriptions-item>
@@ -596,15 +831,32 @@ onBeforeUnmount(() => {
       <el-empty v-if="!(echartsData.xAxisData || []).length" description="暂无图表数据" />
     </div>
 
-    <el-card class="flow-chart-card" shadow="never">
-      <div class="flow-chart-container">
-        <div ref="flowChartRef" class="chart"></div>
-        <el-empty
-          v-if="!flowChartData.times.length"
-          description="等待水流与累计流量数据..."
-        />
-      </div>
-    </el-card>
+    <!-- 方案一：水流分析与热工效能左右 1:1 双栏并排 -->
+    <el-row :gutter="20" class="analysis-charts-row">
+      <el-col :xs="24" :sm="24" :md="12">
+        <el-card class="analysis-chart-card" shadow="never">
+          <div class="analysis-chart-container">
+            <div ref="flowChartRef" class="chart"></div>
+            <el-empty
+              v-if="!flowChartData.times.length"
+              description="等待水流与累计流量数据..."
+            />
+          </div>
+        </el-card>
+      </el-col>
+
+      <el-col :xs="24" :sm="24" :md="12">
+        <el-card class="analysis-chart-card" shadow="never">
+          <div class="analysis-chart-container">
+            <div ref="thermalChartRef" class="chart"></div>
+            <el-empty
+              v-if="!thermalChartData.times.length"
+              description="等待热工效能与热传递分析数据..."
+            />
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
 
     <el-dialog v-model="previewVisible" title="视频预览" width="70%">
       <video
@@ -646,10 +898,14 @@ onBeforeUnmount(() => {
 }
 
 .media-thumb {
-  width: 84px;
-  height: 52px;
-  border-radius: 6px;
+  width: 64px;
+  height: 64px;
+  border-radius: 4px;
+  cursor: pointer;
   object-fit: cover;
+}
+
+.preview-trigger {
   cursor: pointer;
 }
 
@@ -660,7 +916,6 @@ onBeforeUnmount(() => {
 }
 
 :deep(.el-descriptions__content) {
-  width: 100%;
   height: 72px;
   display: flex;
   align-items: center;
@@ -674,11 +929,15 @@ onBeforeUnmount(() => {
   vertical-align: middle;
 }
 
-.flow-chart-card {
+.analysis-charts-row {
   margin-top: 24px;
 }
 
-.flow-chart-container {
+.analysis-chart-card {
+  border-radius: 8px;
+}
+
+.analysis-chart-container {
   position: relative;
   width: 100%;
   height: 440px;

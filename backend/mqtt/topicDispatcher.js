@@ -72,6 +72,13 @@ const createTopicDispatcher = ({
           console.error("[WaterFlow] 流量计算处理异常:", err)
         })
       } catch {}
+
+      try {
+        const thermalAnalysisService = require("../services/thermalAnalysisService")
+        Promise.resolve(thermalAnalysisService.onSensorThermalData(deviceId, data)).catch((err) => {
+          console.error("[ThermalAnalysis] 热工效能计算处理异常:", err)
+        })
+      } catch {}
       return
     }
 

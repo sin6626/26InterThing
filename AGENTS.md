@@ -78,6 +78,12 @@
   - 后台配置中心联动：底层表 `t_error_code_mapper` 完整补齐 4.2 节水力联合诊断过程一~四（`HYDRAULIC_BLOCKAGE`、`HYDRAULIC_PUMP_ABNORMAL`、`HYDRAULIC_SENSOR_ANOMALY`、`HYDRAULIC_LEAK_OR_BURST`）及常规安全保护规则；
   - 动态读取与短时缓存：`recordFault` 废除硬编码常量字典，改为通过 `getRuleErrorMapping` 动态反查后台 `t_error_code_mapper`；引入 2 秒短时内存缓存兼顾故障期间高频保护与后台保存即刻生效；
   - 题目现场改后台即驱动前台：比赛现场只需在后台管理控制台（`contest_admin` 的【错误码语义映射】）修改 `e_no`、`type` 或 `e_msg`，应用层在报警落库和 WebSocket 广播时 100% 按照后台配置的题目要求呈现。
+- 两水箱温差、温度变化速度和估算热传递功率分析（补充逻辑功能三/大纲4.3节）：
+  - 新建 `thermalAnalysisService` 模块：维护设备级内存滑动温度采样点队列（基于配置 `temperature_rate_window`，默认 60s）；
+  - 核心计算：实时计算两水箱温差（$\Delta T = temp\_out - temp\_in$）、水箱A升温速度与水箱B变化速度（℃/min，平滑滤波去噪）、结合水泵状态与实时流量依据热力学公式 $P = 69.77 \times Q \times \Delta T_{heat}$ 计算估算循环水有效热传递功率（W）；
+  - 安全前置校验：水泵停止（`pump_off`）或流量过低（`low_flow`）时强制将功率置 0 并返回工况状态说明；温差反转异常（水箱A比B还冷）时标记 `direction_anomaly`（“供热温差非正，请确认测点与水流方向”）；
+  - 接口与广播：新增 `GET /api/thermal/status/:d_no` 接口，入站传感器实时通过 WebSocket 广播 `thermal_realtime` 主题；
+  - 方案一界面落地：实时数据页（`RealTimeData.vue`）顶部卡片增加两水箱温差、水箱A升温速度、循环水估算热功率 3 个状态 Tag；底部采用 1:1 响应式双栏栅格，左栏为【水流动态与累计流量分析】图表，右栏为【热工效能与热传递分析】双 Y 轴图表，水力与热力工况对称呼应、一览无余。
 - 现场限制：比赛局域网禁止外网；如果题目不涉及移动应用开发，不允许使用手机。
 
 ## 2026-08-24 水循环需求实测结论

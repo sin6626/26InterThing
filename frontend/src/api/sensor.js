@@ -141,3 +141,9 @@ export const getWaterFlowStatus = (d_no) => {
 export const resetWaterFlow = (d_no) => {
   return request.post('/api/waterFlow/reset', { d_no })
 }
+
+// ---------------------------------------------------
+// 水循环热工效能分析接口 (大纲 4.3 节)：
+export const getThermalStatus = (d_no) => {
+  return request.get(`/api/thermal/status/${d_no}`)
+}

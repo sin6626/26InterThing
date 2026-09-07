@@ -83,4 +83,9 @@ const waterFlow_hander = require("../router_handler/waterFlow");
 router.get("/waterFlow/status/:d_no", waterFlow_hander.getWaterFlowStatus);
 router.post("/waterFlow/reset", waterFlow_hander.resetWaterFlow);
 
+// ---------------------------------------------------
+// 水循环热工效能分析相关接口 (大纲 4.3 节)：
+const thermal_hander = require("../router_handler/thermalAnalysis");
+router.get("/thermal/status/:d_no", thermal_hander.getThermalStatus);
+
 module.exports = router;

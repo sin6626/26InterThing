@@ -24,6 +24,7 @@ const DEFAULT_CONTROL_PARAMS = {
   command_timeout: 2,
   min_operating_pressure: 20.0,
   pressure_flow_diagnosis_confirm_time: 2.0,
+  temperature_rate_window: 60,
 }
 
 const FSM_STATES = {
