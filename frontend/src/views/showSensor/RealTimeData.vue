@@ -176,7 +176,7 @@ const renderChart = () => {
       yAxis: { type: 'value' },
       series: getSeries(),
     },
-    true,
+    false,
   )
 }
 
@@ -272,7 +272,7 @@ const renderFlowChart = () => {
         },
       ],
     },
-    true,
+    false,
   )
 }
 
