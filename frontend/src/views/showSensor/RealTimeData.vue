@@ -435,7 +435,7 @@ const renderThermalChart = () => {
       ],
       series: [
         {
-          name: '水箱A温度 (℃)',
+          name: '入水温度 (℃)',
           type: 'line',
           smooth: true,
           showSymbol: false,
@@ -444,7 +444,7 @@ const renderThermalChart = () => {
           data: thermalChartData.value.tempIns,
         },
         {
-          name: '水箱B温度 (℃)',
+          name: '出水温度 (℃)',
           type: 'line',
           smooth: true,
           showSymbol: false,
