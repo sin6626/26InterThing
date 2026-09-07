@@ -9,6 +9,11 @@ export const numericControlTopics = new Set([
   'cooling_delay',
   'data_timeout',
   'command_timeout',
+  'min_operating_pressure',
+  'pressure_flow_diagnosis_confirm_time',
+  'pid_min_open_time',
+  'pid_min_close_time',
+  'pipe_inner_diameter'
 ])
 
 const flattenTree = (nodes) => nodes.flatMap((node) => [node, ...flattenTree(node.children || [])])
