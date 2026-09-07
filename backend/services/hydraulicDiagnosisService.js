@@ -69,6 +69,7 @@ const getOrCreateDiagnosisState = (dNo) => {
       dNo,
       currentCandidateCode: null,
       candidateStartTime: 0,
+      lockedFaultDiagnosis: null,
       activeDiagnosis: {
         code: DIAGNOSIS_CODES.STOPPED,
         ...DIAGNOSIS_METAS[DIAGNOSIS_CODES.STOPPED],
@@ -121,14 +122,23 @@ const evaluateHydraulicStatus = (dNo, context, params, now = Date.now()) => {
     flowRate,
     pressure,
     isBuildingFlow,
+    isFault,
     staleSensors = [],
   } = context
+
+  // 0. 设备处于故障锁定状态：保持触发停机时的诊断结论，直到故障复位
+  if (isFault && state.lockedFaultDiagnosis) {
+    return state.lockedFaultDiagnosis
+  }
 
   // 1. 水泵未开：正常停机，免检
   if (pumpState !== "on") {
     state.currentCandidateCode = null
     state.candidateStartTime = 0
     state.historySamples = []
+    if (state.lockedFaultDiagnosis) {
+      return state.lockedFaultDiagnosis
+    }
     state.activeDiagnosis = {
       code: DIAGNOSIS_CODES.STOPPED,
       ...DIAGNOSIS_METAS[DIAGNOSIS_CODES.STOPPED],
@@ -140,6 +150,9 @@ const evaluateHydraulicStatus = (dNo, context, params, now = Date.now()) => {
   if (staleSensors.includes("flow_rate") || staleSensors.includes("pressure") || flowRate === null || pressure === null) {
     state.currentCandidateCode = null
     state.candidateStartTime = 0
+    if (state.lockedFaultDiagnosis) {
+      return state.lockedFaultDiagnosis
+    }
     state.activeDiagnosis = {
       code: DIAGNOSIS_CODES.SENSOR_INVALID,
       ...DIAGNOSIS_METAS[DIAGNOSIS_CODES.SENSOR_INVALID],
@@ -168,18 +181,35 @@ const evaluateHydraulicStatus = (dNo, context, params, now = Date.now()) => {
   const confirmTimeSec = params.pressure_flow_diagnosis_confirm_time ?? 2.0
   const confirmTimeMs = confirmTimeSec * 1000
 
+  // 判定过程 1：疑似管路堵塞或出口阻力过大（高压低流）
+  // 注意：超压属于最高紧急度的瞬时硬核急停保护，无需且不能等待 2 秒防抖，当场立即确诊并联动停机！
+  if (pressure >= maxSafePressure && flowRate < minSafeFlow) {
+    const candidateCode = DIAGNOSIS_CODES.HYDRAULIC_BLOCKAGE
+    state.currentCandidateCode = candidateCode
+    state.candidateStartTime = now
+    state.activeDiagnosis = {
+      code: candidateCode,
+      ...DIAGNOSIS_METAS[candidateCode],
+    }
+    return state.activeDiagnosis
+  }
+
+  // 判定过程 4：疑似管路脱落/严重泄漏/水力骤降（优先级高，直接确诊）
+  if (detectSuddenDrop(state.historySamples, pressure, flowRate)) {
+    const candidateCode = DIAGNOSIS_CODES.HYDRAULIC_LEAK_OR_BURST
+    state.currentCandidateCode = candidateCode
+    state.candidateStartTime = now
+    state.activeDiagnosis = {
+      code: candidateCode,
+      ...DIAGNOSIS_METAS[candidateCode],
+    }
+    return state.activeDiagnosis
+  }
+
   let candidateCode = DIAGNOSIS_CODES.HYDRAULIC_NORMAL
 
-  // 判定过程 4：疑似管路脱落/严重泄漏/水力骤降（优先级高）
-  if (detectSuddenDrop(state.historySamples, pressure, flowRate)) {
-    candidateCode = DIAGNOSIS_CODES.HYDRAULIC_LEAK_OR_BURST
-  }
-  // 判定过程 1：疑似管路堵塞或出口阻力过大（高压低流）
-  else if (pressure >= maxSafePressure && flowRate < minSafeFlow) {
-    candidateCode = DIAGNOSIS_CODES.HYDRAULIC_BLOCKAGE
-  }
   // 判定过程 2：疑似泵送异常（低压低流）
-  else if (pressure < minOperatingPressure && flowRate < minSafeFlow) {
+  if (pressure < minOperatingPressure && flowRate < minSafeFlow) {
     candidateCode = DIAGNOSIS_CODES.HYDRAULIC_PUMP_ABNORMAL
   }
   // 判定过程 3：疑似流量传感器异常或局部阻力增加（常压低流）
@@ -191,9 +221,8 @@ const evaluateHydraulicStatus = (dNo, context, params, now = Date.now()) => {
     candidateCode = DIAGNOSIS_CODES.HYDRAULIC_NORMAL
   }
 
-  // 防抖计时确认
+  // 防抖计时确认（针对过程 2、过程 3 的非紧急工况）
   if (candidateCode === DIAGNOSIS_CODES.HYDRAULIC_NORMAL) {
-    // 恢复正常
     state.currentCandidateCode = null
     state.candidateStartTime = 0
     state.activeDiagnosis = {
@@ -215,18 +244,22 @@ const evaluateHydraulicStatus = (dNo, context, params, now = Date.now()) => {
     // 新异常候选，启动计时
     state.currentCandidateCode = candidateCode
     state.candidateStartTime = now
-    // 如果之前已有确认的异常，暂时保留；如果之前是正常，先不直接跳报警，等待防抖确认
-    if (!state.activeDiagnosis || state.activeDiagnosis.code === DIAGNOSIS_CODES.HYDRAULIC_NORMAL) {
-      // 正在防抖确认期间，不立即切换
-    }
   }
 
   return state.activeDiagnosis
 }
 
+const lockFaultDiagnosis = (dNo, diagnosis) => {
+  const state = getOrCreateDiagnosisState(dNo)
+  if (diagnosis && diagnosis.code !== DIAGNOSIS_CODES.STOPPED && diagnosis.code !== DIAGNOSIS_CODES.HYDRAULIC_NORMAL) {
+    state.lockedFaultDiagnosis = { ...diagnosis }
+    state.activeDiagnosis = { ...diagnosis }
+  }
+}
+
 const getDeviceDiagnosis = (dNo) => {
   const state = getOrCreateDiagnosisState(dNo)
-  return state.activeDiagnosis
+  return state.lockedFaultDiagnosis || state.activeDiagnosis
 }
 
 const resetDeviceDiagnosis = (dNo) => {
@@ -235,6 +268,7 @@ const resetDeviceDiagnosis = (dNo) => {
     state.currentCandidateCode = null
     state.candidateStartTime = 0
     state.historySamples = []
+    state.lockedFaultDiagnosis = null
     state.activeDiagnosis = {
       code: DIAGNOSIS_CODES.STOPPED,
       ...DIAGNOSIS_METAS[DIAGNOSIS_CODES.STOPPED],
@@ -247,5 +281,6 @@ module.exports = {
   DIAGNOSIS_METAS,
   evaluateHydraulicStatus,
   getDeviceDiagnosis,
+  lockFaultDiagnosis,
   resetDeviceDiagnosis,
 }

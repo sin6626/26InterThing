@@ -3,6 +3,7 @@ const { waitForPublish } = require("../mqtt/publishTimeout")
 const {
   evaluateHydraulicStatus,
   getDeviceDiagnosis,
+  lockFaultDiagnosis,
   resetDeviceDiagnosis,
 } = require("./hydraulicDiagnosisService")
 
@@ -384,6 +385,12 @@ const triggerFault = async (dNo, faultOrReason, options = {}) => {
     ? { code: FAULT_CODES.UNKNOWN, reason: faultOrReason }
     : faultOrReason
   const stopPump = options.stopPump ?? fault.stopPump ?? true
+
+  const hydraulicDiagnosis = options.hydraulicDiagnosis || getDeviceDiagnosis(dNo)
+  if (hydraulicDiagnosis) {
+    lockFaultDiagnosis(dNo, hydraulicDiagnosis)
+  }
+
   setFaultState(state, fault.code || FAULT_CODES.UNKNOWN, fault.reason || "未知故障")
 
   const actionErrors = []
@@ -651,6 +658,7 @@ const onSensorData = async (dNo, rawData) => {
       flowRate: state.lastSensors.flow_rate,
       pressure: state.lastSensors.pressure,
       isBuildingFlow: state.fsmState === FSM_STATES.BUILDING_FLOW,
+      isFault: state.fsmState === FSM_STATES.FAULT,
       staleSensors: getStaleSensors(state, now, params.data_timeout),
     },
     params,
@@ -658,7 +666,7 @@ const onSensorData = async (dNo, rawData) => {
   )
   const safetyFault = inspectSafetyConditions(state, params, now, hydraulicDiagnosis)
   if (safetyFault) {
-    await triggerFault(dNo, safetyFault, { stopPump: safetyFault.stopPump })
+    await triggerFault(dNo, safetyFault, { stopPump: safetyFault.stopPump, hydraulicDiagnosis })
     return
   }
   if (state.mode !== "auto" || state.fsmState === FSM_STATES.STOPPED) {

@@ -70,7 +70,8 @@
   - 实时图形化展示：实时数据页（`RealTimeData.vue`）在传感器实时趋势图正下方新增独立 ECharts【水流动态与累计流量分析】图表，双 Y 轴实时呈现瞬时水流、管内流速与累计总流量趋势；顶部 Descriptions 卡片联动展示当前流速、累计量与清零按钮。
 - 压力与流量联合诊断（补充逻辑功能二/大纲4.2节）：
   - 新建 `hydraulicDiagnosisService` 模块：实现前 4 个诊断过程（高压低流疑似管路堵塞 `HYDRAULIC_BLOCKAGE`、低压低流疑似泵送异常 `HYDRAULIC_PUMP_ABNORMAL`、常压低流疑似流量计异常 `HYDRAULIC_SENSOR_ANOMALY`、运行中压流断崖式双骤降疑似管路脱落泄漏 `HYDRAULIC_LEAK_OR_BURST`），按用户要求去除高敏感的第 5 项持续波动检测；
-  - 防抖与免检机制：停机与启动建流等待期免检不误报，异常状态需满足 `pressure_flow_diagnosis_confirm_time`（默认 2 秒）持续确认；
+  - 防抖、免检与突发确诊机制：停机与启动建流等待期免检不误报；普通异常（低压低流/常压低流）需满足 `pressure_flow_diagnosis_confirm_time`（默认 2 秒）持续确认；超压堵塞（过程 1）与压流骤降（过程 4）属于紧急硬核急停保护，免除防抖立即确诊；
+  - 故障态诊断锁定机制：引入 `lockedFaultDiagnosis` 锁定机制，停机保护触发后原子级锁定当前诊断结论，防止水泵关闭后被误重置为正常或静止态，持续在界面呈现红色告警 Tag 直至人工复位；
   - 故障告警深度联动：超压、失流等安全停机保护触发时，将水力联合诊断结论自动融合进 `faultReason` 与 `t_error_msg`；
   - 参数与界面展示闭环：扩展 `min_operating_pressure`（最低参考压力）与 `pressure_flow_diagnosis_confirm_time`（诊断确认时间）并加入数值居中校验白名单；【指令信息】页与【实时数据】页同步展示动态水力诊断状态 Tag 与详细成因 tooltip。
 - 现场限制：比赛局域网禁止外网；如果题目不涉及移动应用开发，不允许使用手机。

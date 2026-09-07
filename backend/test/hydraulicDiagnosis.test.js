@@ -33,28 +33,26 @@ res = evaluateHydraulicStatus(dNo, { pumpState: "on", flowRate: 1.5, pressure: 6
 assert.strictEqual(res.code, DIAGNOSIS_CODES.HYDRAULIC_NORMAL, "正常水力应判定为 HYDRAULIC_NORMAL")
 console.log("✓ 测试通过：正常工况识别")
 
-// 4. 过程 1：疑似管路堵塞（高压低流），验证防抖持续确认
+// 4. 过程 1：疑似管路堵塞（高压低流），超压安全保护，立即确诊（免防抖）
 resetDeviceDiagnosis(dNo)
-// t = 1000ms: 第一次出现高压低流
 res = evaluateHydraulicStatus(dNo, { pumpState: "on", flowRate: 0.2, pressure: 160, isBuildingFlow: false }, defaultParams, 1000)
-// 防抖期间未满 2s，仍保持初始/前一次
-assert.strictEqual(res.code, DIAGNOSIS_CODES.STOPPED, "防抖期间不应立即确诊")
+assert.strictEqual(res.code, DIAGNOSIS_CODES.HYDRAULIC_BLOCKAGE, "过程1超压属于最高紧急度保护，应立即确诊无需防抖")
+console.log("✓ 测试通过：过程 1 疑似管路堵塞立即确诊（免防抖）")
 
-// t = 2000ms (经过 1s)
-res = evaluateHydraulicStatus(dNo, { pumpState: "on", flowRate: 0.2, pressure: 160, isBuildingFlow: false }, defaultParams, 2000)
+// 5. 过程 2：疑似泵送异常（低压低流），验证 2 秒防抖确认
+resetDeviceDiagnosis(dNo)
+// t = 1000ms: 第一次出现低压低流
+res = evaluateHydraulicStatus(dNo, { pumpState: "on", flowRate: 0.1, pressure: 5, isBuildingFlow: false }, defaultParams, 1000)
+assert.strictEqual(res.code, DIAGNOSIS_CODES.STOPPED, "防抖期间未满 2s 不应立即确诊")
+
+// t = 2000ms: 经过 1s
+res = evaluateHydraulicStatus(dNo, { pumpState: "on", flowRate: 0.1, pressure: 5, isBuildingFlow: false }, defaultParams, 2000)
 assert.strictEqual(res.code, DIAGNOSIS_CODES.STOPPED, "未满 2s 确认时间前不确诊")
 
-// t = 3100ms (经过 2.1s >= 2s)
-res = evaluateHydraulicStatus(dNo, { pumpState: "on", flowRate: 0.2, pressure: 160, isBuildingFlow: false }, defaultParams, 3100)
-assert.strictEqual(res.code, DIAGNOSIS_CODES.HYDRAULIC_BLOCKAGE, "满 2s 后应确诊为 HYDRAULIC_BLOCKAGE")
-console.log("✓ 测试通过：过程 1 疑似管路堵塞及防抖时间确认")
-
-// 5. 过程 2：疑似泵送异常（低压低流）
-resetDeviceDiagnosis(dNo)
-evaluateHydraulicStatus(dNo, { pumpState: "on", flowRate: 0.1, pressure: 5, isBuildingFlow: false }, defaultParams, 1000)
+// t = 3200ms: 经过 2.2s >= 2s
 res = evaluateHydraulicStatus(dNo, { pumpState: "on", flowRate: 0.1, pressure: 5, isBuildingFlow: false }, defaultParams, 3200)
 assert.strictEqual(res.code, DIAGNOSIS_CODES.HYDRAULIC_PUMP_ABNORMAL, "满 2s 后应确诊为 HYDRAULIC_PUMP_ABNORMAL")
-console.log("✓ 测试通过：过程 2 疑似泵送异常确认")
+console.log("✓ 测试通过：过程 2 疑似泵送异常及 2 秒防抖确认")
 
 // 6. 过程 3：疑似流量传感器异常（常压低流）
 resetDeviceDiagnosis(dNo)
