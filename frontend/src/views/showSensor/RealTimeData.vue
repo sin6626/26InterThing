@@ -205,11 +205,11 @@ const renderFlowChart = () => {
         axisPointer: { type: 'cross' },
       },
       legend: {
-        top: 36,
+        top: 56,
         data: ['瞬时流量 (L/min)', '管内流速 (m/s)', '累计总流量 (L)'],
       },
       grid: {
-        top: 85,
+        top: 105,
         left: '3%',
         right: '4%',
         bottom: 30,
