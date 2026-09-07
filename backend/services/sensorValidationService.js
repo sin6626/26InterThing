@@ -97,6 +97,66 @@ const evaluateSensorVstatus = async (data) => {
     }
   }
 
+  // 提取流量数值（兼容 flow_rate、field5、Fin、flow）
+  const flowCandidates = [
+    data.flow_rate,
+    data.field5,
+    data.Fin,
+    data.flow,
+  ]
+  let currentFlow = null
+  for (const candidate of flowCandidates) {
+    if (candidate !== undefined && candidate !== null && candidate !== "") {
+      const val = Number(candidate)
+      if (Number.isFinite(val)) {
+        currentFlow = val
+        break
+      }
+    }
+  }
+
+  // 判断水泵是否开启运行
+  let isPumpActive = false
+  if (data.water_Y2 !== undefined && data.water_Y2 !== null && data.water_Y2 !== "") {
+    isPumpActive = Number(data.water_Y2) === 1
+  } else {
+    try {
+      const { getOrCreateDeviceState } = require("./waterControlEngine")
+      const devState = getOrCreateDeviceState(dNo)
+      isPumpActive = devState.pumpState === "on" || devState.desiredPumpState === "on"
+    } catch {
+      isPumpActive = false
+    }
+  }
+
+  // 判断设备当前是否处于水力异常状态（过程一~四）
+  let isHydraulicFault = false
+  try {
+    const { getDeviceDiagnosis, DIAGNOSIS_CODES } = require("./hydraulicDiagnosisService")
+    const diag = getDeviceDiagnosis(dNo)
+    if (diag && [
+      DIAGNOSIS_CODES.HYDRAULIC_BLOCKAGE,
+      DIAGNOSIS_CODES.HYDRAULIC_PUMP_ABNORMAL,
+      DIAGNOSIS_CODES.HYDRAULIC_SENSOR_ANOMALY,
+      DIAGNOSIS_CODES.HYDRAULIC_LEAK_OR_BURST,
+    ].includes(diag.code)) {
+      isHydraulicFault = true
+    }
+  } catch {
+    isHydraulicFault = false
+  }
+
+  // 判定过程 1~4 与低流量异常：
+  // 1. 若当前确诊为水力异常（过程一~四），该数据必然为异常告警数据
+  if (isHydraulicFault) {
+    return 1
+  }
+
+  // 2. 若水泵处于开机运行状态，且流量低于最低安全流量（过程二泵送异常、过程三传感器异常、常规失流干烧）
+  if (isPumpActive && currentFlow !== null && currentFlow < params.min_safe_flow) {
+    return 1
+  }
+
   return 0
 }
 
