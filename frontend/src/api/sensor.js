@@ -147,3 +147,14 @@ export const resetWaterFlow = (d_no) => {
 export const getThermalStatus = (d_no) => {
   return request.get(`/api/thermal/status/${d_no}`)
 }
+
+// ---------------------------------------------------
+// 水泵与加热累计运行时长接口：
+export const getDeviceRuntimeStatus = (d_no) => {
+  return request.get(`/api/runtime/status/${d_no}`)
+}
+
+export const resetDeviceRuntime = (data) => {
+  return request.post('/api/runtime/reset', data)
+}
+

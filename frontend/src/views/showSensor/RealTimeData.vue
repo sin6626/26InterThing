@@ -3,10 +3,12 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  getDeviceRuntimeStatus,
   getEchartsSensorByQuery,
   getSensorDataRealTime,
   getThermalStatus,
   getWaterFlowStatus,
+  resetDeviceRuntime,
   resetWaterFlow,
 } from '@/api/sensor'
 import { useDeviceNumbers } from '@/composables/useDeviceNumbers'
@@ -91,6 +93,17 @@ const thermalChartData = ref({
   tempDiffs: [],
   powers: [],
 })
+
+// 水泵与加热累计运行时长状态
+const runtimeStatus = ref({
+  pump_runtime_seconds: 0,
+  pump_runtime_formatted: '0秒',
+  pump_state: 0,
+  heater_runtime_seconds: 0,
+  heater_runtime_formatted: '0秒',
+  heater_state: 0,
+})
+let stopWsRuntimeListen = null
 
 const mediaInfo = computed(() => sensorData.value.media || null)
 const mediaIsVideo = computed(() => mediaInfo.value?.media_type === 'video')
@@ -361,6 +374,48 @@ const handleResetFlow = async () => {
   }
 }
 
+// 获取当前设备水泵与加热累计运行时长
+const fetchRuntimeStatus = async () => {
+  const dNo = selectedDeviceNo.value || undefined
+  if (!dNo) return
+  try {
+    const res = await getDeviceRuntimeStatus(dNo)
+    if (res.data) {
+      runtimeStatus.value = res.data
+    }
+  } catch {}
+}
+
+// 运行时长清零操作与二次确认
+const handleResetRuntime = async (type = 'pump') => {
+  const dNo = selectedDeviceNo.value || sensorData.value.values['编号']
+  if (!dNo) {
+    ElMessage.warning('请先选择设备编号')
+    return
+  }
+  const typeName = type === 'pump' ? '水泵累计运行时长' : '加热累计运行时长'
+  try {
+    await ElMessageBox.confirm(
+      `确定要将设备【${dNo}】的【${typeName}】清零吗？此操作将记录到操作历史中，不可撤销。`,
+      '运行时长清零确认',
+      {
+        confirmButtonText: '确定清零',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+    const res = await resetDeviceRuntime({ d_no: dNo, type })
+    if (res.data) {
+      runtimeStatus.value = res.data
+    }
+    ElMessage.success(`${typeName}已成功清零`)
+  } catch (err) {
+    if (err !== 'cancel') {
+      ElMessage.error(err.response?.data?.message || err.message || '清零操作失败')
+    }
+  }
+}
+
 // 推入水流与累计数据点
 const pushFlowPoint = (payload) => {
   const timeStr = payload.updated_at
@@ -546,7 +601,7 @@ const loadAll = async () => {
     tempDiffs: [],
     powers: [],
   }
-  await Promise.all([fetchRealtime(), fetchChartData(), fetchFlowStatus(), fetchThermalStatus()])
+  await Promise.all([fetchRealtime(), fetchChartData(), fetchFlowStatus(), fetchThermalStatus(), fetchRuntimeStatus()])
   renderChart()
   if (flowStatus.value && selectedDeviceNo.value) {
     pushFlowPoint({
@@ -654,12 +709,31 @@ onMounted(async () => {
     pushThermalPoint(payload)
   })
 
+  // 消费当前选中设备的水泵与加热累计运行时长广播
+  stopWsRuntimeListen = onRealtimeMessage('runtime_realtime', (payload) => {
+    if (
+      selectedDeviceNo.value &&
+      String(payload?.d_no) !== String(selectedDeviceNo.value)
+    ) {
+      return
+    }
+    runtimeStatus.value = {
+      pump_runtime_seconds: payload.pump_runtime_seconds ?? 0,
+      pump_runtime_formatted: payload.pump_runtime_formatted ?? '0秒',
+      pump_state: payload.pump_state ?? 0,
+      heater_runtime_seconds: payload.heater_runtime_seconds ?? 0,
+      heater_runtime_formatted: payload.heater_runtime_formatted ?? '0秒',
+      heater_state: payload.heater_state ?? 0,
+    }
+  })
+
   // 重连后主动补拉一次图表，弥补断线期间可能漏掉的数据点。
   stopLifecycle = onWsLifecycle((type) => {
     if (type === 'reconnected') {
       fetchChartData().then(() => renderChart())
       fetchFlowStatus().then(() => renderFlowChart())
       fetchThermalStatus().then(() => renderThermalChart())
+      fetchRuntimeStatus()
     }
   })
 })
@@ -697,6 +771,10 @@ onBeforeUnmount(() => {
   if (stopWsThermalListen) {
     stopWsThermalListen()
     stopWsThermalListen = null
+  }
+  if (stopWsRuntimeListen) {
+    stopWsRuntimeListen()
+    stopWsRuntimeListen = null
   }
   if (stopLifecycle) {
     stopLifecycle()
@@ -773,6 +851,36 @@ onBeforeUnmount(() => {
             plain
             class="reset-btn"
             @click="handleResetFlow"
+          >
+            清零
+          </el-button>
+        </div>
+      </el-descriptions-item>
+
+      <el-descriptions-item label="水泵累计运行时长">
+        <div class="flow-total-cell">
+          <el-tag type="info" class="flow-volume-tag">{{ runtimeStatus.pump_runtime_formatted }}</el-tag>
+          <el-button
+            size="small"
+            type="danger"
+            plain
+            class="reset-btn"
+            @click="handleResetRuntime('pump')"
+          >
+            清零
+          </el-button>
+        </div>
+      </el-descriptions-item>
+
+      <el-descriptions-item label="加热累计运行时长">
+        <div class="flow-total-cell">
+          <el-tag type="info" class="flow-volume-tag">{{ runtimeStatus.heater_runtime_formatted }}</el-tag>
+          <el-button
+            size="small"
+            type="danger"
+            plain
+            class="reset-btn"
+            @click="handleResetRuntime('heater')"
           >
             清零
           </el-button>

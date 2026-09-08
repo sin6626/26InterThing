@@ -7,6 +7,7 @@ const { createTopicDispatcher } = require("../mqtt/topicDispatcher")
 const serviceMocks = [
   ['../services/waterFlowService', { onSensorFlowData: async () => {} }],
   ['../services/thermalAnalysisService', { onSensorThermalData: async () => {} }],
+  ['../services/deviceRuntimeService', { onSensorRuntimeData: async () => {} }],
 ].map(([name, exports]) => {
   const id = require.resolve(name), previous = require.cache[id]
   require.cache[id] = { id, filename: id, loaded: true, exports }

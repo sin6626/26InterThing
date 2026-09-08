@@ -79,6 +79,13 @@ const createTopicDispatcher = ({
           console.error("[ThermalAnalysis] 热工效能计算处理异常:", err)
         })
       } catch {}
+
+      try {
+        const deviceRuntimeService = require("../services/deviceRuntimeService")
+        Promise.resolve(deviceRuntimeService.onSensorRuntimeData(deviceId, data)).catch((err) => {
+          console.error("[DeviceRuntime] 累计运行时长处理异常:", err)
+        })
+      } catch {}
       return
     }
 

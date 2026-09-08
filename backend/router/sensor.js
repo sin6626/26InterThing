@@ -88,4 +88,10 @@ router.post("/waterFlow/reset", waterFlow_hander.resetWaterFlow);
 const thermal_hander = require("../router_handler/thermalAnalysis");
 router.get("/thermal/status/:d_no", thermal_hander.getThermalStatus);
 
+// ---------------------------------------------------
+// 设备水泵与加热累计运行时长接口：
+const runtime_hander = require("../router_handler/deviceRuntime");
+router.get("/runtime/status/:d_no", runtime_hander.getRuntimeStatus);
+router.post("/runtime/reset", runtime_hander.resetRuntime);
+
 module.exports = router;
