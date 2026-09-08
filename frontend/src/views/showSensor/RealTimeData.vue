@@ -40,6 +40,11 @@ const currentHydraulicDiagnosis = computed(() => {
   return deviceStatusMap.value[dNo]?.control?.hydraulicDiagnosis || null
 })
 
+const currentDeviceStatus = computed(() => {
+  const dNo = selectedDeviceNo.value || Object.keys(deviceStatusMap.value)[0] || ''
+  return deviceStatusMap.value[dNo]?.status || 'offline'
+})
+
 const getDiagnosisTagType = (level) => {
   if (level === 'error') return 'danger'
   if (level === 'warning') return 'warning'
@@ -888,7 +893,9 @@ onBeforeUnmount(() => {
       </el-descriptions-item>
 
       <el-descriptions-item label="是否在线">
-        <el-tag>{{ sensorData.values['是否在线'] || '未启用心跳' }}</el-tag>
+        <el-tag :type="currentDeviceStatus === 'online' ? 'success' : 'info'">
+          {{ currentDeviceStatus === 'online' ? '在线' : '离线' }}
+        </el-tag>
       </el-descriptions-item>
 
       <el-descriptions-item label="水力运行诊断">

@@ -21,27 +21,42 @@ exports.deviceStatus = (req, res) => {
       waterControlEngine = require("../services/waterControlEngine")
     } catch {}
 
+    const devicePresenceService = require("../services/devicePresenceService")
     const fullStatusMap = {}
 
-    // 只展示数据库中已登记的设备
-    results.forEach((row) => {
-      const num = String(row.number).trim()
-      if (!num) return
-      fullStatusMap[num] = {
-        status: "unmonitored",
-        vstatus: null,
-        level: "unknown",
-        text: "未启用心跳",
-        updated_at: null,
-        control: waterControlEngine ? waterControlEngine.getDeviceControlStatus(num) : null,
-      }
-    })
-
-    res.send({
-      status: 0,
-      message: "查询成功",
-      data: fullStatusMap,
-    })
+    // 只展示数据库中已登记的设备，并动态获取设备在线/离线状态
+    Promise.all(
+      results.map(async (row) => {
+        const num = String(row.number).trim()
+        if (!num) return
+        const presence = await devicePresenceService.getDevicePresence(num)
+        const control = waterControlEngine ? waterControlEngine.getDeviceControlStatus(num) : null
+        let level = presence.status === "online" ? "normal" : "unknown"
+        let text = presence.text
+        if (control?.fsmState === "FAULT") {
+          level = "error"
+          text = control.faultReason || "设备故障"
+        }
+        fullStatusMap[num] = {
+          status: presence.status,
+          vstatus: null,
+          level,
+          text,
+          updated_at: presence.updated_at,
+          control,
+        }
+      })
+    )
+      .then(() => {
+        res.send({
+          status: 0,
+          message: "查询成功",
+          data: fullStatusMap,
+        })
+      })
+      .catch((queryErr) => {
+        res.cc(queryErr)
+      })
   })
 }
 

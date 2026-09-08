@@ -20,6 +20,14 @@ test('validateControlValue accepts valid positive water control parameters', () 
     { topic: 'data_timeout', t_name: '数据更新超时时间（秒）', value: 5, min: null, max: null },
     controlTree,
   ))
+  assert.doesNotThrow(() => validateControlValue(
+    { topic: 'device_offline_timeout', t_name: '设备离线超时时间（秒）', value: 5, min: null, max: null },
+    controlTree,
+  ))
+  assert.throws(() => validateControlValue(
+    { topic: 'device_offline_timeout', t_name: '设备离线超时时间（秒）', value: 0, min: null, max: null },
+    controlTree,
+  ))
 })
 
 test('PID允许零系数，时间必须整数且满足窗口组合约束', () => {

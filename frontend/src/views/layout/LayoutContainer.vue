@@ -72,12 +72,14 @@ const playAlarmSound = () => {
   }
 }
 
-// 心跳已禁用；未监测状态使用中性灰色，控制故障仍使用红色。
+// 设备在线/离线/故障视觉状态
 const statusClass = (statusInfo) => {
   if (statusInfo?.control?.fsmState === 'FAULT' || statusInfo?.level === 'error') return 'error'
-  if (!statusInfo || statusInfo.status === 'unmonitored') return 'unmonitored'
-  if (statusInfo.status !== 'online') return 'unmonitored'
-  return Number(statusInfo.vstatus ?? 0) === 0 ? 'online' : 'error'
+  if (!statusInfo || statusInfo.status === 'offline') return 'offline'
+  if (statusInfo.status === 'online') {
+    return Number(statusInfo.vstatus ?? 0) === 0 ? 'online' : 'error'
+  }
+  return 'offline'
 }
 
 // 水循环状态机标签类型与文本
@@ -228,7 +230,31 @@ onBeforeUnmount(() => {
               ></span>
               <span class="device-no">{{ dNo }}</span>
               <el-tag
-                v-if="status?.control"
+                v-if="status?.status === 'offline'"
+                size="small"
+                type="info"
+                style="margin-left: 4px; font-size: 11px;"
+              >
+                离线
+              </el-tag>
+              <el-tag
+                v-else-if="status?.control && status.control.fsmState !== 'STOPPED'"
+                size="small"
+                :type="controlTagType(status.control)"
+                style="margin-left: 4px; font-size: 11px;"
+              >
+                {{ controlTagText(status.control) }}
+              </el-tag>
+              <el-tag
+                v-else-if="status?.status === 'online'"
+                size="small"
+                type="success"
+                style="margin-left: 4px; font-size: 11px;"
+              >
+                在线
+              </el-tag>
+              <el-tag
+                v-else-if="status?.control"
                 size="small"
                 :type="controlTagType(status.control)"
                 style="margin-left: 4px; font-size: 11px;"
@@ -335,6 +361,7 @@ onBeforeUnmount(() => {
               box-shadow: 0 0 4px #67c23a;
             }
 
+            &.offline,
             &.unmonitored {
               background-color: #909399;
             }

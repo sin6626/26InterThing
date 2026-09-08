@@ -16,19 +16,20 @@ export function useDeviceStatus() {
   const normalizeStatusInfo = (raw) => {
     if (!raw || typeof raw === 'string') {
       return {
-        status: 'unmonitored',
+        status: 'offline',
         vstatus: null,
         level: 'unknown',
-        text: '未启用心跳',
+        text: '离线',
         updated_at: null,
       }
     }
 
+    const isOnline = raw.status === 'online'
     return {
-      status: raw.status || 'unmonitored',
-      vstatus: raw.status === 'online' ? raw.vstatus ?? 0 : null,
-      level: raw.level || (raw.status === 'online' ? 'normal' : 'unknown'),
-      text: raw.text || (raw.status === 'online' ? '正常' : '未启用心跳'),
+      status: raw.status || 'offline',
+      vstatus: isOnline ? raw.vstatus ?? 0 : null,
+      level: raw.level || (isOnline ? 'normal' : 'unknown'),
+      text: raw.text || (isOnline ? '在线' : '离线'),
       updated_at: raw.updated_at || null,
       control: raw.control || null,
     }

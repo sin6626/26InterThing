@@ -49,8 +49,13 @@ const createTopicDispatcher = ({
       return
     }
 
-    // 传感器数据：入库 + 推送给前端实时页 + 驱动水循环自动控制引擎。
+    // 传感器数据：入库 + 推送给前端实时页 + 驱动水循环自动控制引擎 + 记录设备在线活跃。
     if (topic === "device/sensor") {
+      try {
+        const devicePresenceService = require("../services/devicePresenceService")
+        devicePresenceService.recordDeviceActivity(deviceId)
+      } catch {}
+
       saveHandler.saveSensorData(topic, payload, (err) => {
         if (err) {
           console.error("传感器数据保存失败:", err.message)

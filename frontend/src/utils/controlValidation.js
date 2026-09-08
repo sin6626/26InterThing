@@ -16,7 +16,8 @@ export const numericControlTopics = new Set([
   'pid_kp', 'pid_ki', 'pid_kd', 'pid_cycle_time', 'pid_min_on_time', 'pid_min_off_time',
   'pid_resume_hysteresis',
   'pid_overshoot_allowance',
-  'pipe_inner_diameter'
+  'pipe_inner_diameter',
+  'device_offline_timeout',
 ])
 
 const flattenTree = (nodes) => nodes.flatMap((node) => [node, ...flattenTree(node.children || [])])

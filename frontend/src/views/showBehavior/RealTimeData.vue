@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import { getEchartsSensorByQuery, getSensorDataRealTime } from '@/api/sensor'
 import { useDeviceNumbers } from '@/composables/useDeviceNumbers'
+import { useDeviceStatus } from '@/composables/useDeviceStatus'
 import { useSwitchStore } from '@/stores/switch'
 import {
   applyMinuteRealtimeUpdate,
@@ -21,7 +22,13 @@ const echartsData = ref({ xAxisData: [], seriesData: [], minuteStats: {} })
 const previewVisible = ref(false)
 
 const { numbers: deviceNumbers, fetchDeviceNumbers } = useDeviceNumbers()
+const { deviceStatusMap } = useDeviceStatus()
 const switchStore = useSwitchStore()
+
+const currentDeviceStatus = computed(() => {
+  const dNo = selectedDeviceNo.value || Object.keys(deviceStatusMap.value)[0] || ''
+  return deviceStatusMap.value[dNo]?.status || 'offline'
+})
 
 const chartRef = ref(null)
 let chartInstance = null
@@ -248,7 +255,9 @@ onBeforeUnmount(() => {
       </el-descriptions-item>
 
       <el-descriptions-item label="是否在线">
-        <el-tag>{{ sensorData.values['是否在线'] || '未启用心跳' }}</el-tag>
+        <el-tag :type="currentDeviceStatus === 'online' ? 'success' : 'info'">
+          {{ currentDeviceStatus === 'online' ? '在线' : '离线' }}
+        </el-tag>
       </el-descriptions-item>
 
       <el-descriptions-item label="更新时间">

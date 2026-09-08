@@ -416,13 +416,19 @@ const notifyStatusChange = (dNo) => {
   }
 
   if (typeof broadcast === "function") {
+    let presence = { status: "offline", text: "离线", updated_at: null }
+    try {
+      const devicePresenceService = require("./devicePresenceService")
+      presence = devicePresenceService.getDevicePresenceSync(dNo)
+    } catch {}
+
     broadcast("device_status", {
       d_no: dNo,
-      status: "unmonitored",
+      status: presence.status,
       vstatus: null,
-      level: state.fsmState === FSM_STATES.FAULT ? "error" : "unknown",
-      text: state.fsmState === FSM_STATES.FAULT ? (state.faultReason || "设备故障") : "未启用心跳",
-      updated_at: new Date().toLocaleString(),
+      level: state.fsmState === FSM_STATES.FAULT ? "error" : (presence.status === "online" ? "normal" : "unknown"),
+      text: state.fsmState === FSM_STATES.FAULT ? (state.faultReason || "设备故障") : presence.text,
+      updated_at: presence.updated_at || new Date().toLocaleString(),
       control: getDeviceControlStatus(dNo),
     })
   }

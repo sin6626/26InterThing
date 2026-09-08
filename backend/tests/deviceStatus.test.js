@@ -23,12 +23,23 @@ test.after(() => {
   else delete require.cache[dbPath]
 })
 
-test("deviceStatus reports registered devices without heartbeat monitoring", async () => {
-  const payload = await new Promise((resolve) => {
+test("deviceStatus 初始无数据时判定为离线，收到活跃后判定为在线", async () => {
+  const devicePresenceService = require("../services/devicePresenceService")
+  devicePresenceService.__resetForTests()
+
+  let payload = await new Promise((resolve) => {
     deviceHandler.deviceStatus({}, { send: resolve, cc: assert.fail })
   })
-
   assert.equal(payload.status, 0)
-  assert.equal(payload.data["202111"].status, "unmonitored")
-  assert.equal(payload.data["202111"].text, "未启用心跳")
+  assert.equal(payload.data["202111"].status, "offline")
+  assert.equal(payload.data["202111"].text, "离线")
+
+  await devicePresenceService.recordDeviceActivity("202111")
+  payload = await new Promise((resolve) => {
+    deviceHandler.deviceStatus({}, { send: resolve, cc: assert.fail })
+  })
+  assert.equal(payload.data["202111"].status, "online")
+  assert.equal(payload.data["202111"].text, "在线")
+
+  devicePresenceService.__resetForTests()
 })
