@@ -229,7 +229,7 @@ test('用户停止不等待数据库，立即用已有模板关闭加热', async
 test('PID达到目标在本窗口立即发布关闭，回差内不重开且不进入故障', async () => {
   await start()
   now = 3100
-  await engine.onSensorData(dNo, sensors({ temp_out: 35, heat_Y1: 1 }))
+  await engine.onSensorData(dNo, sensors({ temp_out: 35.1, heat_Y1: 1 }))
   assert.equal(commands.at(-1).topic, 'heater')
   assert.equal(commands.at(-1).value, 'off')
   assert.equal(engine.getDeviceControlStatus(dNo).pid.suppressed, true)

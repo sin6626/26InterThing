@@ -24,6 +24,7 @@ const WATER_CONTROL_CONFIGS = [
   [35, 0, 'on', 'PID 最短开启时间（秒）', '2', '1', 'pid_min_on_time', null, '3'],
   [36, 0, 'on', 'PID 最短关闭时间（秒）', '2', '1', 'pid_min_off_time', null, '3'],
   [37, 0, 'on', 'PID 恢复回差（℃）', '2', '1', 'pid_resume_hysteresis', null, '0.3'],
+  [38, 0, 'on', 'PID 允许超调温差（℃，目标加此值强制关热）', '2', '1', 'pid_overshoot_allowance', null, '0.1'],
 ]
 
 const ensureWaterControlConfigs = async (queryImpl) => {

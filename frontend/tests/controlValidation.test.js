@@ -70,3 +70,8 @@ test('PID恢复回差接受小数，拒绝零、非法数值和大于等于目�
     assert.throws(() => validateControlValue({ topic: 'pid_resume_hysteresis', value }, controlTree))
   }
 })
+
+test('允许超调温差支持零和小数，不得触及安全上限', () => {
+  for (const value of [0, 0.1, 0.2]) assert.doesNotThrow(() => validateControlValue({ topic: 'pid_overshoot_allowance', value }, controlTree))
+  for (const value of [-1, 'oops', 10]) assert.throws(() => validateControlValue({ topic: 'pid_overshoot_allowance', value }, controlTree))
+})

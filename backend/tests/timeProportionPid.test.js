@@ -98,7 +98,7 @@ test('达到目标立即截断长脉冲，不受一秒节流和最短开启时�
   const s = setup({ pid_ki: 1 })
   s.at(3000); s.update(30, 1)
   assert.equal(s.pid.schedule(s.params).desired, 'on')
-  s.at(3100); s.update(35, 2)
+  s.at(3100); s.update(35.1, 2)
   const result = s.pid.schedule(s.params, true)
   assert.equal(result.desired, 'off')
   assert.equal(result.plannedDuty, 0)
@@ -129,4 +129,18 @@ test('恢复回差必须为正有限数字且低于目标温度', () => {
   for (const value of [0, -1, NaN, Infinity, 35]) {
     assert.ok(validateControlParams({ ...p, pid_resume_hysteresis: value }))
   }
+})
+
+test('允许超调温差可配置：35.1不截断35.2阈值，达到阈值立即关热', () => {
+  const s = setup({ pid_overshoot_allowance: 0.2 })
+  s.at(3000); s.update(30, 1); s.pid.schedule(s.params)
+  s.at(3100); s.update(35.1, 2)
+  assert.equal(s.pid.schedule(s.params, true).desired, 'on')
+  assert.equal(s.pid.schedule(s.params).cutoffTemperature, 35.2)
+  s.at(3200); s.update(35.2, 3)
+  assert.equal(s.pid.schedule(s.params, true).desired, 'off')
+  assert.equal(s.pid.schedule(s.params).resumeTemperature, 34.7)
+  const p = { ...PID_DEFAULTS, target_temperature: 35, max_safe_temperature: 45 }
+  assert.equal(validateControlParams({ ...p, pid_overshoot_allowance: 0 }), null)
+  for (const value of [-1, NaN, 10]) assert.ok(validateControlParams({ ...p, pid_overshoot_allowance: value }))
 })

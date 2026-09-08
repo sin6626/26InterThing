@@ -37,7 +37,7 @@ const createTimeProportionPid = ({ clock = () => performance.now() } = {}) => {
     const now = clock()
     // 超调检查不受一秒计算节流限制；立即废弃剩余脉冲。
     if (Number.isFinite(value)) {
-      if (value >= params.target_temperature) {
+      if (value >= params.target_temperature + (params.pid_overshoot_allowance ?? 0.1)) {
         suppressed = true
         integral = output = onMilliseconds = 0
       } else if (suppressed && value <= params.target_temperature - (params.pid_resume_hysteresis ?? 0.3)) {
@@ -123,7 +123,7 @@ const createTimeProportionPid = ({ clock = () => performance.now() } = {}) => {
       windowIndex: Math.floor(windowStart / period),
       desired: desired ? 'on' : 'off', limitationReason: reason,
       calculationError,
-      suppressed, cutoffTemperature: params.target_temperature,
+      suppressed, cutoffTemperature: params.target_temperature + (params.pid_overshoot_allowance ?? 0.1),
       resumeTemperature: params.target_temperature - (params.pid_resume_hysteresis ?? 0.3),
     }
   }

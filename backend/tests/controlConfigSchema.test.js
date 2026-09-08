@@ -41,6 +41,7 @@ test("ensureWaterControlConfigs idempotently seeds every required water control 
       'temperature_control_strategy', 'pid_kp', 'pid_ki', 'pid_kd',
       'pid_cycle_time', 'pid_min_on_time', 'pid_min_off_time',
       'pid_resume_hysteresis',
+      'pid_overshoot_allowance',
     ],
   )
   assert.ok(calls.every((call) => !call.sql.includes("ON DUPLICATE KEY UPDATE")))

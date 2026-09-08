@@ -15,6 +15,7 @@ export const numericControlTopics = new Set([
   'pid_min_close_time',
   'pid_kp', 'pid_ki', 'pid_kd', 'pid_cycle_time', 'pid_min_on_time', 'pid_min_off_time',
   'pid_resume_hysteresis',
+  'pid_overshoot_allowance',
   'pipe_inner_diameter'
 ])
 
@@ -27,7 +28,7 @@ export const validateControlValue = (data, tree) => {
   }
   if (!numericControlTopics.has(data.topic)) return
   const numericValue = Number(data.value)
-  const gain = ['pid_kp', 'pid_ki', 'pid_kd'].includes(data.topic)
+  const gain = ['pid_kp', 'pid_ki', 'pid_kd', 'pid_overshoot_allowance'].includes(data.topic)
   if (data.value === null || data.value === '' || typeof data.value === 'boolean' || !Number.isFinite(numericValue) || (gain ? numericValue < 0 : numericValue <= 0)) {
     throw new Error(`${data.t_name || '控制参数'}必须是${gain ? '大于或等于0' : '大于0'}的数字`)
   }
@@ -47,6 +48,7 @@ export const validateControlValue = (data, tree) => {
       .map((node) => [node.topic, Number(node.value)]),
   )
   values[data.topic] = numericValue
+  if (values.target_temperature + (values.pid_overshoot_allowance ?? 0.1) >= values.max_safe_temperature) throw new Error('PID 强制关热温度必须低于最高安全温度')
   if ((values.pid_resume_hysteresis ?? 0.3) >= values.target_temperature) throw new Error('PID 恢复回差必须小于目标温度')
   const cycle = values.pid_cycle_time ?? 20
   const minOn = values.pid_min_on_time ?? values.pid_min_open_time ?? 3
