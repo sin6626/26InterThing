@@ -281,6 +281,7 @@ onMounted(async () => {
         <span>PID 输出：{{ currentControl.pid.output.toFixed(1) }}%</span>
         <span>计划占空比：{{ currentControl.pid.plannedDuty.toFixed(1) }}%</span>
         <span>窗口剩余：{{ currentControl.pid.windowRemaining.toFixed(1) }} 秒</span>
+        <span v-if="currentControl.pid.resumeTemperature != null">关热 / 恢复：{{ currentControl.pid.cutoffTemperature }} / {{ Number(currentControl.pid.resumeTemperature.toFixed(2)) }} ℃</span>
         <span v-if="currentControl.pid.limitationReason">{{ currentControl.pid.limitationReason }}</span>
       </template>
       <span v-if="currentControl.configError" class="danger-text">{{ currentControl.configError }}</span>

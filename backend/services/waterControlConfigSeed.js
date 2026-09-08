@@ -23,6 +23,7 @@ const WATER_CONTROL_CONFIGS = [
   [34, 0, 'on', 'PID 控制周期（秒）', '2', '1', 'pid_cycle_time', null, '20'],
   [35, 0, 'on', 'PID 最短开启时间（秒）', '2', '1', 'pid_min_on_time', null, '3'],
   [36, 0, 'on', 'PID 最短关闭时间（秒）', '2', '1', 'pid_min_off_time', null, '3'],
+  [37, 0, 'on', 'PID 恢复回差（℃）', '2', '1', 'pid_resume_hysteresis', null, '0.3'],
 ]
 
 const ensureWaterControlConfigs = async (queryImpl) => {

@@ -93,3 +93,40 @@ test('配置兼容旧名，规范值优先；拒绝非法数字及周期组合',
   assert.match(validateControlParams({ ...p, pid_cycle_time: 2 }), /之和/)
   assert.match(validateControlParams({ ...p, temperature_control_strategy: 'pid' }, { starting: true }), /Kp/)
 })
+
+test('达到目标立即截断长脉冲，不受一秒节流和最短开启时间限制', () => {
+  const s = setup({ pid_ki: 1 })
+  s.at(3000); s.update(30, 1)
+  assert.equal(s.pid.schedule(s.params).desired, 'on')
+  s.at(3100); s.update(35, 2)
+  const result = s.pid.schedule(s.params, true)
+  assert.equal(result.desired, 'off')
+  assert.equal(result.plannedDuty, 0)
+  assert.equal(result.suppressed, true)
+  assert.equal(result.resumeTemperature, 34.7)
+})
+
+test('恢复回差内保持关热，积分清除，恢复不重放原窗口且遵守最短关闭', () => {
+  const s = setup({ pid_ki: 10 })
+  s.at(3000); s.update(32, 1); s.pid.schedule(s.params)
+  s.at(4000); s.update(32, 2)
+  assert.equal(s.pid.schedule(s.params).output, 60)
+  s.at(4100); s.update(35.1, 3); s.pid.markOff()
+  s.at(5000); s.update(34.8, 4)
+  assert.equal(s.pid.schedule(s.params).suppressed, true)
+  s.at(6000); s.update(33, 5)
+  assert.equal(s.pid.schedule(s.params).output, 20)
+  assert.equal(s.pid.schedule(s.params).desired, 'off')
+  s.at(23000); s.pid.markOff()
+  assert.equal(s.pid.schedule(s.params).desired, 'off')
+  s.at(26000); assert.equal(s.pid.schedule(s.params).desired, 'off') // 只剩1秒，舍弃
+  s.pid.reset()
+  assert.equal(s.pid.schedule(s.params).suppressed, false)
+})
+
+test('恢复回差必须为正有限数字且低于目标温度', () => {
+  const p = { ...PID_DEFAULTS, target_temperature: 35 }
+  for (const value of [0, -1, NaN, Infinity, 35]) {
+    assert.ok(validateControlParams({ ...p, pid_resume_hysteresis: value }))
+  }
+})

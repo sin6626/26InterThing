@@ -19,6 +19,7 @@ const createTimeProportionPid = ({ clock = () => performance.now() } = {}) => {
   let lastOff = clock()
   let windowMissed = false
   let calculationError = null
+  let suppressed = false
 
   const reset = () => {
     integral = derivative = output = onMilliseconds = 0
@@ -28,11 +29,32 @@ const createTimeProportionPid = ({ clock = () => performance.now() } = {}) => {
     lastOff = clock()
     windowMissed = false
     calculationError = null
+    suppressed = false
   }
 
   const markOff = () => { lastOff = clock() }
   const update = ({ value, sample, params }) => {
     const now = clock()
+    // 超调检查不受一秒计算节流限制；立即废弃剩余脉冲。
+    if (Number.isFinite(value)) {
+      if (value >= params.target_temperature) {
+        suppressed = true
+        integral = output = onMilliseconds = 0
+      } else if (suppressed && value <= params.target_temperature - (params.pid_resume_hysteresis ?? 0.3)) {
+        suppressed = false
+        // 保留窗口边界，本窗口不重开；下一窗口使用新的 PID 输出。
+        lastCalculation = lastMeasurement = null
+        derivative = 0
+      }
+      if (suppressed) {
+        measurement = lastMeasurement = value
+        error = params.target_temperature - value
+        lastSample = sample
+        lastCalculation = now
+        derivative = 0
+        return
+      }
+    }
     if (!Number.isFinite(value) || sample === lastSample
       || (lastCalculation !== null && now - lastCalculation < 1000)) return
     const dt = lastCalculation === null ? 0 : (now - lastCalculation) / 1000
@@ -90,6 +112,10 @@ const createTimeProportionPid = ({ clock = () => performance.now() } = {}) => {
       desired = false
       reason = '剩余开启时间不足，跳过本窗口脉冲'
     }
+    if (suppressed) {
+      desired = false
+      reason = '超调抑制：已关热，等待降至恢复温度'
+    }
     return {
       target: params.target_temperature, measurement, error,
       output, plannedDuty: onMilliseconds / period * 100,
@@ -97,6 +123,8 @@ const createTimeProportionPid = ({ clock = () => performance.now() } = {}) => {
       windowIndex: Math.floor(windowStart / period),
       desired: desired ? 'on' : 'off', limitationReason: reason,
       calculationError,
+      suppressed, cutoffTemperature: params.target_temperature,
+      resumeTemperature: params.target_temperature - (params.pid_resume_hysteresis ?? 0.3),
     }
   }
   return { update, schedule, reset, markOff }

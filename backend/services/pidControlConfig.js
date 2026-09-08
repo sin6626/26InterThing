@@ -2,6 +2,7 @@ const PID_DEFAULTS = {
   temperature_control_strategy: 'hysteresis',
   pid_kp: 0, pid_ki: 0, pid_kd: 0,
   pid_cycle_time: 20, pid_min_on_time: 3, pid_min_off_time: 3,
+  pid_resume_hysteresis: 0.3,
 }
 const PID_ALIASES = { pid_min_open_time: 'pid_min_on_time', pid_min_close_time: 'pid_min_off_time' }
 const canonicalTopic = (topic) => PID_ALIASES[topic] || topic
@@ -33,6 +34,7 @@ const validateControlParams = (params, { starting = false } = {}) => {
   }
   if (params.pid_cycle_time < params.pid_min_on_time + params.pid_min_off_time) return 'PID 窗口必须至少为最短开启和关闭时间之和'
   if (params.target_temperature >= params.max_safe_temperature) return '目标温度必须低于最高安全温度'
+  if (params.pid_resume_hysteresis >= params.target_temperature) return 'PID 恢复回差必须小于目标温度'
   if (params.temperature_hysteresis >= params.target_temperature) return '温度回差必须小于目标温度'
   if (params.min_operating_pressure >= params.max_safe_pressure) return '参考最低压力必须小于最大安全压力'
   if (starting && params.temperature_control_strategy === 'pid' && params.pid_kp <= 0) return 'PID 尚未整定：启动前必须设置 Kp > 0'

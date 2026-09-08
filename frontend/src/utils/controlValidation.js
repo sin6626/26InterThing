@@ -14,6 +14,7 @@ export const numericControlTopics = new Set([
   'pid_min_open_time',
   'pid_min_close_time',
   'pid_kp', 'pid_ki', 'pid_kd', 'pid_cycle_time', 'pid_min_on_time', 'pid_min_off_time',
+  'pid_resume_hysteresis',
   'pipe_inner_diameter'
 ])
 
@@ -46,6 +47,7 @@ export const validateControlValue = (data, tree) => {
       .map((node) => [node.topic, Number(node.value)]),
   )
   values[data.topic] = numericValue
+  if ((values.pid_resume_hysteresis ?? 0.3) >= values.target_temperature) throw new Error('PID 恢复回差必须小于目标温度')
   const cycle = values.pid_cycle_time ?? 20
   const minOn = values.pid_min_on_time ?? values.pid_min_open_time ?? 3
   const minOff = values.pid_min_off_time ?? values.pid_min_close_time ?? 3

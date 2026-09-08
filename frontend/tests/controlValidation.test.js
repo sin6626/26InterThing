@@ -63,3 +63,10 @@ test('validateControlValue rejects non-positive values and unsafe temperature re
     /必须大于目标温度/,
   )
 })
+
+test('PID恢复回差接受小数，拒绝零、非法数值和大于等于目标的回差', () => {
+  assert.doesNotThrow(() => validateControlValue({ topic: 'pid_resume_hysteresis', value: 0.3 }, controlTree))
+  for (const value of [0, -1, 'oops', 35]) {
+    assert.throws(() => validateControlValue({ topic: 'pid_resume_hysteresis', value }, controlTree))
+  }
+})
