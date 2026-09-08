@@ -154,14 +154,16 @@ const onSensorThermalData = async (dNo, rawData, now = Date.now()) => {
   state.heatingRateIn = roundNumber(rateIn, 2)
   state.heatingRateOut = roundNumber(rateOut, 2)
 
-  // 5. 温差计算（取绝对值，代表两水箱之间的真实温差跨度）
-  const absDiff = Math.abs(rawTempOut - rawTempIn)
+  // 5. 温差计算：两水箱温差幅度取绝对值，有效供热温差保留方向 Tout - Tin
+  const diff = rawTempOut - rawTempIn
+  const absDiff = Math.abs(diff)
   state.tempDiff = roundNumber(absDiff, 2)
-  state.heatTransferTempDiff = roundNumber(absDiff, 2)
+  state.heatTransferTempDiff = roundNumber(diff, 2)
 
   // 6. 循环水估算热传递功率计算 (P = 69.77 * Q * |ΔT|)
   // 必须满足前置安全限制：水泵运行且流量有效 >= minSafeFlow
   const flowRate = state.lastFlowRate
+  const isTempReversed = isHeaterOn && rawTempIn > rawTempOut + 0.1
   if (!isPumpOn) {
     state.estimatedThermalPower = 0.0
     state.powerStatus = "pump_off"
@@ -170,12 +172,16 @@ const onSensorThermalData = async (dNo, rawData, now = Date.now()) => {
     state.estimatedThermalPower = 0.0
     state.powerStatus = "low_flow"
     state.powerStatusText = `循环流量过低 (<${minSafeFlow}L/min)`
+  } else if (isTempReversed) {
+    state.estimatedThermalPower = 0.0
+    state.powerStatus = "reversed"
+    state.powerStatusText = "温度传感器疑似装反"
   } else if (absDiff <= 0) {
     state.estimatedThermalPower = 0.0
     state.powerStatus = "no_diff"
     state.powerStatusText = "两水箱无温差"
   } else {
-    // 只要有温差且水泵在流动，便根据两水箱温差绝对值计算有效热传递功率
+    // 正常工况下，根据两水箱温差计算有效热传递功率
     const calculatedPower = THERMAL_POWER_FACTOR * flowRate * absDiff
     state.estimatedThermalPower = roundNumber(calculatedPower, 2)
     state.powerStatus = "ok"

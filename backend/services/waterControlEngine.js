@@ -29,6 +29,7 @@ const DEFAULT_CONTROL_PARAMS = {
   min_operating_pressure: 20.0,
   pressure_flow_diagnosis_confirm_time: 2.0,
   temperature_rate_window: 60,
+  temp_reversed_confirm_time: 5,
 }
 
 const FSM_STATES = {
@@ -65,6 +66,7 @@ const FAULT_CODES = {
   SENSOR_FLOW_TIMEOUT: "SENSOR_FLOW_TIMEOUT",
   SENSOR_PRESSURE_TIMEOUT: "SENSOR_PRESSURE_TIMEOUT",
   SENSOR_TEMPERATURE_TIMEOUT: "SENSOR_TEMPERATURE_TIMEOUT",
+  TEMP_SENSOR_REVERSED: "TEMP_SENSOR_REVERSED",
   UNKNOWN: "UNKNOWN",
 }
 
@@ -88,6 +90,7 @@ const getOrCreateDeviceState = (dNo) => {
       countdown: 0,
       coolingExitState: FSM_STATES.STOPPED,
       lowFlowStartTime: 0,
+      tempReversedStartTime: 0,
       zeroStartTime: {
         temp_in: 0,
         temp_out: 0,
@@ -754,6 +757,33 @@ const inspectSafetyConditions = (state, params, now, hydraulicDiagnosis = null) 
       stopPump: pumpActive && !canCoolSafely,
     }
   }
+
+  // 温度传感器装反判定：水流经加热器，正常应为 temp_in <= temp_out；若加热开启且水流正常，但 temp_in > temp_out 持续超限则为装反
+  const heaterActive = state.heaterState === "on" || state.desiredHeaterState === "on"
+  const tempIn = state.lastSensors.temp_in
+  const tempOut = state.lastSensors.temp_out
+  const hasValidTemps = typeof tempIn === "number" && Number.isFinite(tempIn)
+    && typeof tempOut === "number" && Number.isFinite(tempOut)
+    && tempIn > 0 && tempOut > 0
+  const tempReversedObserved = pumpActive && flow >= params.min_safe_flow && heaterActive && hasValidTemps && (tempIn > tempOut + 0.1)
+
+  let tempReversedConfirmed = false
+  if (tempReversedObserved) {
+    if (!state.tempReversedStartTime) state.tempReversedStartTime = now
+    const confirmTimeMs = (Number(params.temp_reversed_confirm_time) || 5) * 1000
+    tempReversedConfirmed = now - state.tempReversedStartTime >= confirmTimeMs
+  } else {
+    state.tempReversedStartTime = 0
+  }
+
+  if (tempReversedConfirmed) {
+    const canCoolSafely = pumpActive && flow >= params.min_safe_flow && pressure < params.max_safe_pressure
+    return {
+      code: FAULT_CODES.TEMP_SENSOR_REVERSED,
+      reason: `进出口温度传感器疑似装反(入口${tempIn.toFixed(1)}℃ > 出口${tempOut.toFixed(1)}℃，持续超过${params.temp_reversed_confirm_time || 5}s)`,
+      stopPump: pumpActive && !canCoolSafely,
+    }
+  }
   return null
 }
 
@@ -1073,6 +1103,7 @@ const resetFault = async (dNo) => {
   state.faultReason = null
   state.countdown = 0
   state.lowFlowStartTime = 0
+  state.tempReversedStartTime = 0
   if (state.zeroStartTime) {
     state.zeroStartTime = { temp_in: 0, temp_out: 0, flow_rate: 0, pressure: 0 }
   }

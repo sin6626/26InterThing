@@ -21,9 +21,9 @@ test("thermalAnalysis: 两水箱温差与供热温差计算准确性", async () 
   )
   assert.equal(res1.temp_in, 35.0)
   assert.equal(res1.temp_out, 31.0)
-  // 两水箱温差绝对值：|31.0 - 35.0| = 4.0
+  // 两水箱温差绝对值：|31.0 - 35.0| = 4.0；供热温差 Tout - Tin = -4.0
   assert.equal(res1.temperature_difference, 4.0)
-  assert.equal(res1.heat_transfer_difference, 4.0)
+  assert.equal(res1.heat_transfer_difference, -4.0)
 
   // 2. 水箱A 30℃，水箱B 32.5℃
   const res2 = await thermalAnalysisService.onSensorThermalData(

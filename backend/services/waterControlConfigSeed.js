@@ -26,6 +26,7 @@ const WATER_CONTROL_CONFIGS = [
   [37, 0, 'on', 'PID 恢复回差（℃）', '2', '1', 'pid_resume_hysteresis', null, '0.3'],
   [38, 0, 'on', 'PID 允许超调温差（℃，目标加此值强制关热）', '2', '1', 'pid_overshoot_allowance', null, '0.1'],
   [39, 0, 'on', '设备离线超时时间（秒）', '2', '1', 'device_offline_timeout', null, '5'],
+  [40, 0, 'on', '温度装反确认时间（秒）', '2', '1', 'temp_reversed_confirm_time', null, '5'],
 ]
 
 const ensureWaterControlConfigs = async (queryImpl) => {
