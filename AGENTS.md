@@ -134,3 +134,7 @@
 - Docker EMQX日志确认admin_1234触发flapping_detected：1分钟15次连接，封禁5分钟；连接返回code 5。
 - 累计运行时长写入backend/data/runtime_stats.json，而nodemon默认监视json。新增backend/nodemon.json忽略data/**；用nodemon真实匹配器确认旧规则匹配运行文件、新规则忽略，同时业务JS仍匹配。
 - 需要完整重启nodemon进程以加载新配置，仅rs重启子进程不足；未修改Broker认证或禁用封禁保护。运行时统计数据为用户改动，不提交。
+
+### 比赛环境关闭频繁连接自动封禁
+- 按用户明确要求，Docker容器emqx的flapping_detect.enable已设为false，并确认持久化至/opt/emqx/data/configs/cluster.hocon；不需要重启Broker。
+- 已定向清除admin_1234封禁，验证客户端connected=true、5项订阅。账号密码认证未调整。容器重启使用持久化配置；删除数据重建容器需重新配置。
