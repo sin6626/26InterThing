@@ -1,3 +1,4 @@
+const { PID_ALIASES } = require('./pidControlConfig')
 const WATER_CONTROL_CONFIGS = [
   [0, null, null, "控制模式", "1", "1", "master", "device/direct", "off"],
   [10, 0, "on", "目标温度", "2", "1", "target_temperature", null, "35"],
@@ -15,6 +16,13 @@ const WATER_CONTROL_CONFIGS = [
   [25, 0, "on", "水管内径（毫米）", "2", "1", "pipe_inner_diameter", null, "15"],
   [28, 0, "on", "参考最低压力", "2", "1", "min_operating_pressure", null, "20"],
   [29, 0, "on", "水流压力联合诊断时间", "2", "1", "pressure_flow_diagnosis_confirm_time", null, "2"],
+  [30, 0, 'on', '控温策略', '2', '1', 'temperature_control_strategy', null, 'hysteresis'],
+  [31, 0, 'on', 'PID 比例 Kp（%/℃）', '2', '1', 'pid_kp', null, '0'],
+  [32, 0, 'on', 'PID 积分 Ki（%/(℃·秒)）', '2', '1', 'pid_ki', null, '0'],
+  [33, 0, 'on', 'PID 微分 Kd（%·秒/℃）', '2', '1', 'pid_kd', null, '0'],
+  [34, 0, 'on', 'PID 控制周期（秒）', '2', '1', 'pid_cycle_time', null, '20'],
+  [35, 0, 'on', 'PID 最短开启时间（秒）', '2', '1', 'pid_min_on_time', null, '3'],
+  [36, 0, 'on', 'PID 最短关闭时间（秒）', '2', '1', 'pid_min_off_time', null, '3'],
 ]
 
 const ensureWaterControlConfigs = async (queryImpl) => {
@@ -37,6 +45,16 @@ const ensureWaterControlConfigs = async (queryImpl) => {
       [topic],
     )
     let configId = existingRows?.[0]?.id
+
+    // 只在规范节点缺失时原位改名，保留旧节点ID及全部设备覆盖值。
+    const alias = Object.keys(PID_ALIASES).find(key => PID_ALIASES[key] === topic)
+    if (configId === undefined && alias) {
+      const legacyRows = await queryImpl('SELECT id FROM t_direct_config WHERE topic = ? ORDER BY id LIMIT 1', [alias])
+      if (legacyRows?.length) {
+        configId = legacyRows[0].id
+        await queryImpl('UPDATE t_direct_config SET topic = ? WHERE id = ? AND topic = ?', [topic, configId, alias])
+      }
+    }
 
     if (configId === undefined) {
       const parentId = configuredRefId === null ? null : configIdsByTopic.get("master")

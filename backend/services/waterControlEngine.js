@@ -1,5 +1,8 @@
 const { buildDeviceCommandEnvelope } = require("../mqtt/commandMapper")
 const { waitForPublish } = require("../mqtt/publishTimeout")
+const { performance } = require('node:perf_hooks')
+const { createTimeProportionPid } = require('./timeProportionPid')
+const { PID_DEFAULTS, readControlParams, validateControlParams, controlFingerprint } = require('./pidControlConfig')
 const {
   evaluateHydraulicStatus,
   getDeviceDiagnosis,
@@ -12,6 +15,7 @@ const {
 } = require("./errorMessageMapping")
 
 const DEFAULT_CONTROL_PARAMS = {
+  ...PID_DEFAULTS,
   target_temperature: 35.0,
   temperature_hysteresis: 0.5,
   min_safe_flow: 0.5,
@@ -52,6 +56,7 @@ const SENSOR_LABELS = {
 }
 
 const FAULT_CODES = {
+  CONTROL_CONFIG_INVALID: 'CONTROL_CONFIG_INVALID',
   BUILD_FLOW_TIMEOUT: "BUILD_FLOW_TIMEOUT",
   COMMAND_PUBLISH_FAILED: "COMMAND_PUBLISH_FAILED",
   LOW_FLOW: "LOW_FLOW",
@@ -69,6 +74,7 @@ let mqttClientDep = null
 let broadcastDep = null
 let configLoaderDep = null
 let timerId = null
+let monotonicClock = () => performance.now()
 
 const getOrCreateDeviceState = (dNo) => {
   if (!deviceStateMap.has(dNo)) {
@@ -108,13 +114,30 @@ const getOrCreateDeviceState = (dNo) => {
       desiredPumpState: "off",
       desiredHeaterState: "off",
       lastCommandStatus: null,
+      generation: 0,
+      heatInhibited: false,
+      actionTail: Promise.resolve(),
+      published: {},
+      failedActionAt: {},
+      pidController: createTimeProportionPid({ clock: () => monotonicClock() }),
+      pid: null,
+      sensorSample: 0,
+      controlStrategy: 'hysteresis',
+      configError: null,
+      configFingerprint: null,
+      restartReason: null,
+      protectionStopPump: false,
+      lastHeaterOff: monotonicClock(),
     })
   }
   return deviceStateMap.get(dNo)
 }
 
 const loadDeviceControlConfig = async (dNo) => {
+  const state = getOrCreateDeviceState(dNo)
+  if (typeof configLoaderDep !== 'function' && state.configCache && monotonicClock() - state.configCachedAt < 1000) return state.configCache
   let rows = []
+  state.configLoadError = null
   if (typeof configLoaderDep === "function") {
     rows = await configLoaderDep(dNo)
   } else {
@@ -123,10 +146,12 @@ const loadDeviceControlConfig = async (dNo) => {
       rows = await directRepository.getDeviceConfigRows(dNo)
     } catch (error) {
       console.error(`[WaterControl] 读取设备 ${dNo} 控制配置失败:`, error.message)
+      state.configLoadError = '控制配置读取失败，禁止继续加热'
+      if (state.configCache) return state.configCache
     }
   }
 
-  const params = { ...DEFAULT_CONTROL_PARAMS }
+  const params = readControlParams(rows, DEFAULT_CONTROL_PARAMS)
   const configsByTopic = {}
   let masterMode = "manual"
 
@@ -137,16 +162,15 @@ const loadDeviceControlConfig = async (dNo) => {
       masterMode = row.value === "on" ? "auto" : "manual"
       continue
     }
-    if (row.topic in params) {
-      const parsedValue = Number.parseFloat(row.value)
-      if (Number.isFinite(parsedValue) && parsedValue > 0) params[row.topic] = parsedValue
-    }
   }
 
-  const state = getOrCreateDeviceState(dNo)
   state.mode = masterMode
-  state.dataTimeoutSeconds = params.data_timeout
-  return { configsByTopic, masterMode, params }
+  state.controlStrategy = params.temperature_control_strategy
+  state.configError = validateControlParams(params)
+  state.dataTimeoutSeconds = Number.isFinite(params.data_timeout) && params.data_timeout > 0 ? params.data_timeout : DEFAULT_CONTROL_PARAMS.data_timeout
+  state.configCache = { configsByTopic, masterMode, params }
+  state.configCachedAt = monotonicClock()
+  return state.configCache
 }
 
 const syncAllDeviceConfigs = async () => {
@@ -188,19 +212,39 @@ const insertCommandHistory = async ({ config, dNo, topic, value, oldValue, remar
   }
 }
 
-const executeDeviceAction = async (dNo, topic, value, remark = "应用层自动控制") => {
+const publishDeviceAction = async (dNo, topic, value, remark, options, generation) => {
   const state = getOrCreateDeviceState(dNo)
+  if (options.manual && value === 'on' && (state.starting || [FSM_STATES.RUNNING, FSM_STATES.BUILDING_FLOW, FSM_STATES.COOLING, FSM_STATES.FAULT].includes(state.fsmState))) throw new Error('自动运行、冷却或故障期间不能手动开启，请先停止并等待流程结束')
+  if (value === 'on' && generation !== state.generation) return { cancelled: true }
+  if (value === 'on' && options.automatic && (state.heatInhibited || state.mode !== 'auto' || state.fsmState !== FSM_STATES.RUNNING)) return { cancelled: true }
+  // 安全关闭重复发布只在失败时重试，最多每秒一次。
+  if (options.protection && state.failedActionAt[topic]?.value === value
+    && monotonicClock() - state.failedActionAt[topic].time < 1000) return { skipped: true }
+  if (state.published[topic] === value && !options.force) return { skipped: true }
   const desiredKey = topic === "pump" ? "desiredPumpState" : "desiredHeaterState"
   const actualKey = topic === "pump" ? "pumpState" : "heaterState"
   const previousDesired = state[desiredKey]
   const startedAt = new Date().toISOString()
   let config = null
-
-  state[desiredKey] = value
-  state.lastCommandStatus = { topic, value, status: "pending", startedAt }
+  let publishPhase = false
 
   try {
-    const loaded = await loadDeviceControlConfig(dNo)
+    // 关闭不能等待数据库；使用最近一次确认的设备模板。
+    const loaded = value === 'off' && state.configCache ? state.configCache : await loadDeviceControlConfig(dNo)
+    if (value === 'on' && generation !== state.generation) return { cancelled: true }
+    if (options.automatic && state.configFingerprint && state.configFingerprint !== controlFingerprint(loaded.params)) return { cancelled: true }
+    if (options.pidWindow !== undefined && value === 'on') {
+      const schedule = state.pidController.schedule(loaded.params, state.published.heater === 'on')
+      if (schedule.windowIndex !== options.pidWindow || schedule.desired !== 'on') return { cancelled: true }
+    }
+    if (options.manual && value === 'on' && (state.starting || [FSM_STATES.RUNNING, FSM_STATES.BUILDING_FLOW, FSM_STATES.COOLING, FSM_STATES.FAULT].includes(state.fsmState))) throw new Error('自动运行、冷却或故障期间不能手动开启，请先停止并等待流程结束')
+    if (topic === 'heater' && value === 'on') {
+      if (options.automatic && (state.heatInhibited || state.mode !== 'auto' || state.fsmState !== FSM_STATES.RUNNING)) return { cancelled: true }
+      const safety = heaterSafetyFromConfig(state, loaded.params)
+      if (!safety.safe) throw new Error(safety.reason)
+      if (loaded.params.temperature_control_strategy === 'pid' && monotonicClock() - state.lastHeaterOff < loaded.params.pid_min_off_time * 1000) return { cancelled: true }
+    }
+    publishPhase = true
     config = loaded.configsByTopic[topic]
     if (!config) throw new Error(`未配置${topic}控制指令`)
 
@@ -216,16 +260,30 @@ const executeDeviceAction = async (dNo, topic, value, remark = "应用层自动�
 
     const mqttClient = getMqttClient()
     if (!mqttClient || typeof mqttClient.publishToDevice !== "function") throw new Error("MQTT发布客户端不可用")
-    await waitForPublish(mqttClient.publishToDevice(commandEnvelope.topic, commandEnvelope.payload), loaded.params.command_timeout)
-
-    state.lastCommandStatus = {
+    state[desiredKey] = value
+    state.lastCommandStatus = { topic, value, status: 'pending', startedAt }
+    // 新消息可能已执行但PUBACK丢失，不能继续用旧成功值去重安全关闭。
+    delete state.published[topic]
+    const controller = new AbortController()
+    try {
+      await waitForPublish(mqttClient.publishToDevice(commandEnvelope.topic, commandEnvelope.payload, { single: true, signal: controller.signal }),
+        Number.isFinite(loaded.params.command_timeout) && loaded.params.command_timeout > 0 ? loaded.params.command_timeout : DEFAULT_CONTROL_PARAMS.command_timeout)
+    } finally { controller.abort() }
+    state.published[topic] = value
+    delete state.failedActionAt[topic]
+    if (topic === 'heater' && value === 'off') {
+      state.pidController.markOff()
+      state.lastHeaterOff = monotonicClock()
+    }
+    if (generation === state.generation || value === 'off') state.lastCommandStatus = {
       topic,
       value,
       status: "success",
       startedAt,
       finishedAt: new Date().toISOString(),
     }
-    await insertCommandHistory({
+    // 历史落库不能占用执行器队列，否则数据库迟滞会阻塞安全关闭。
+    void insertCommandHistory({
       config,
       dNo,
       topic,
@@ -236,8 +294,11 @@ const executeDeviceAction = async (dNo, topic, value, remark = "应用层自动�
     })
     return commandEnvelope
   } catch (error) {
-    state[desiredKey] = previousDesired
-    state.lastCommandStatus = {
+    if (!publishPhase) throw error
+    error.publishFailed = true
+    state.failedActionAt[topic] = { time: monotonicClock(), value }
+    if (generation === state.generation) state[desiredKey] = previousDesired
+    if (generation === state.generation || value === 'off') state.lastCommandStatus = {
       topic,
       value,
       status: "failed",
@@ -245,7 +306,7 @@ const executeDeviceAction = async (dNo, topic, value, remark = "应用层自动�
       startedAt,
       finishedAt: new Date().toISOString(),
     }
-    await insertCommandHistory({
+    void insertCommandHistory({
       config,
       dNo,
       topic,
@@ -254,6 +315,40 @@ const executeDeviceAction = async (dNo, topic, value, remark = "应用层自动�
       remark: `${remark}；MQTT发布失败: ${error.message}`,
       result: "failed",
     })
+    throw error
+  }
+}
+
+const executeDeviceAction = (dNo, topic, value, remark = '应用层自动控制', options = {}) => {
+  const state = getOrCreateDeviceState(dNo)
+  const generation = state.generation
+  const action = state.actionTail.then(() => publishDeviceAction(dNo, topic, value, remark, options, generation))
+  state.actionTail = action.catch(() => {})
+  return action
+}
+
+const revokeHeating = (state) => {
+  state.generation++
+  state.heatInhibited = true
+  state.desiredHeaterState = 'off'
+  state.pidController.reset()
+  state.pid = null
+}
+
+const executeManualAction = async (dNo, topic, value) => {
+  const state = getOrCreateDeviceState(dNo)
+  if (value === 'off' && (state.starting || state.fsmState !== FSM_STATES.STOPPED)) {
+    await stopAuto(dNo)
+    if (topic === 'heater') return { status: 'published' }
+  }
+  try {
+    const result = await executeDeviceAction(dNo, topic, value, '手动控制', { manual: true })
+    if (result?.cancelled) throw new Error('操作已取消或尚未满足最短关闭时间')
+    notifyStatusChange(dNo)
+    return { status: 'published' }
+  } catch (error) {
+    // 前置审查失败不改变运行状态；实际发布失败沿用故障联锁。
+    if (error.publishFailed) await triggerFault(dNo, { code: FAULT_CODES.COMMAND_PUBLISH_FAILED, reason: error.message, stopPump: true })
     throw error
   }
 }
@@ -301,6 +396,10 @@ const getDeviceControlStatus = (dNo) => {
     sensorUpdatedAt: { ...state.sensorUpdatedAt },
     staleSensors: getStaleSensors(state),
     hydraulicDiagnosis: getDeviceDiagnosis(dNo),
+    controlStrategy: state.controlStrategy,
+    configError: state.configError,
+    restartReason: state.restartReason,
+    pid: state.pid ? { ...state.pid, configError: state.configError } : null,
   }
 }
 
@@ -348,7 +447,9 @@ const recordFault = async (dNo, faultCode, reason, extraHydraulicDiagnosis = nul
   // 2. 动态读取后台 t_error_code_mapper 用户配置（带2秒内存缓存，即改即生效）
   let errorMapping = null
   try {
-    errorMapping = await getRuleErrorMapping(ruleKey)
+    errorMapping = typeof configLoaderDep === 'function'
+      ? { e_no: ruleKey, type: '6', e_msg: reason }
+      : await getRuleErrorMapping(ruleKey)
   } catch (err) {
     console.warn("[WaterControl] 读取错误码语义映射异常，使用兜底:", err.message)
     errorMapping = { e_no: ruleKey, type: "6", e_msg: reason }
@@ -401,10 +502,12 @@ const setFaultState = (state, faultCode, reason) => {
 
 const triggerFault = async (dNo, faultOrReason, options = {}) => {
   const state = getOrCreateDeviceState(dNo)
+  revokeHeating(state)
   const fault = typeof faultOrReason === "string"
     ? { code: FAULT_CODES.UNKNOWN, reason: faultOrReason }
     : faultOrReason
   const stopPump = options.stopPump ?? fault.stopPump ?? true
+  state.protectionStopPump = stopPump
 
   const hydraulicDiagnosis = options.hydraulicDiagnosis || getDeviceDiagnosis(dNo)
   if (hydraulicDiagnosis) {
@@ -415,13 +518,13 @@ const triggerFault = async (dNo, faultOrReason, options = {}) => {
 
   const actionErrors = []
   try {
-    await executeDeviceAction(dNo, "heater", "off", `故障保护: ${state.faultReason}`)
+    await executeDeviceAction(dNo, "heater", "off", `故障保护: ${state.faultReason}`, { protection: true })
   } catch (error) {
     actionErrors.push(`关闭加热失败: ${error.message}`)
   }
   if (stopPump) {
     try {
-      await executeDeviceAction(dNo, "pump", "off", `故障保护: ${state.faultReason}`)
+      await executeDeviceAction(dNo, "pump", "off", `故障保护: ${state.faultReason}`, { protection: true })
     } catch (error) {
       actionErrors.push(`关闭水泵失败: ${error.message}`)
     }
@@ -490,15 +593,28 @@ const updateSensorState = (state, rawData, now) => {
   updateNumericSensor(state, rawData, "temp_out", "field2", now)
   updateNumericSensor(state, rawData, "flow_rate", "field5", now)
   updateNumericSensor(state, rawData, "pressure", "field4", now)
+  if ((Object.hasOwn(rawData, 'temp_out') || Object.hasOwn(rawData, 'field2')) && Number.isFinite(state.lastSensors.temp_out)) {
+    const stamp = rawData.c_time ?? rawData.time
+    const key = stamp == null ? null : `${stamp}:${state.lastSensors.temp_out}`
+    if (key === null || key !== state.lastTemperaturePacketKey) state.sensorSample++
+    state.lastTemperaturePacketKey = key
+  }
   state.lastSensorTime = Math.max(...Object.values(state.sensorUpdatedAt))
 }
 
 const checkHeaterSafety = async (dNo) => {
   const state = getOrCreateDeviceState(dNo)
   const { params } = await loadDeviceControlConfig(dNo)
+  return heaterSafetyFromConfig(state, params)
+}
+
+const heaterSafetyFromConfig = (state, params) => {
+  const configError = state.configLoadError || validateControlParams(params)
+  if (configError) return { safe: false, reason: configError }
   const staleSensors = getStaleSensors(state, Date.now(), params.data_timeout)
   if (staleSensors.length) return { safe: false, reason: `${formatStaleSensors(staleSensors)}数据超时或无效，禁止加热`, staleSensors }
   if (state.fsmState === FSM_STATES.FAULT) return { safe: false, reason: `设备仍处于故障状态: ${state.faultReason || "请先复位"}` }
+  if (state.lastSensors.temp_in <= 0 || state.lastSensors.temp_out <= 0) return { safe: false, reason: '温度为断线零值，禁止开启加热' }
   if (state.pumpState !== "on") return { safe: false, reason: "水泵未开启，禁止加热" }
   if (state.lastSensors.flow_rate < params.min_safe_flow) {
     return { safe: false, reason: `当前流量不足(${state.lastSensors.flow_rate.toFixed(2)} < ${params.min_safe_flow} L/min)，严禁打开加热防止干烧` }
@@ -515,6 +631,8 @@ const checkHeaterSafety = async (dNo) => {
 
 const beginTemperatureSensorCooling = async (dNo, fault, params) => {
   const state = getOrCreateDeviceState(dNo)
+  revokeHeating(state)
+  const generation = state.generation
   try {
     await executeDeviceAction(dNo, "heater", "off", `温度传感器保护: ${fault.reason}`)
   } catch (error) {
@@ -527,6 +645,7 @@ const beginTemperatureSensorCooling = async (dNo, fault, params) => {
     notifyStatusChange(dNo)
     return
   }
+  if (generation !== state.generation) return
   const canCool = state.pumpState === "on"
     && state.lastSensors.flow_rate >= params.min_safe_flow
     && state.lastSensors.pressure < params.max_safe_pressure
@@ -634,27 +753,77 @@ const inspectSafetyConditions = (state, params, now, hydraulicDiagnosis = null) 
 
 const safeguardFaultCooling = async (dNo, params, now) => {
   const state = getOrCreateDeviceState(dNo)
-  if (state.fsmState !== FSM_STATES.FAULT || state.pumpState !== "on") return false
+  if (state.fsmState !== FSM_STATES.FAULT) return false
   const staleSensors = getStaleSensors(state, now, params.data_timeout)
   const unsafeSensor = staleSensors.includes("flow_rate") || staleSensors.includes("pressure")
-  const unsafeReading = state.lastSensors.flow_rate < params.min_safe_flow || state.lastSensors.pressure >= params.max_safe_pressure
-  if (!unsafeSensor && !unsafeReading) return false
+  const unsafeReading = state.pumpState === 'on' && (state.lastSensors.flow_rate < params.min_safe_flow || state.lastSensors.pressure >= params.max_safe_pressure)
+  if (unsafeSensor || unsafeReading) state.protectionStopPump = true
   const actionErrors = []
   try {
-    await executeDeviceAction(dNo, "heater", "off", "故障散热条件失效: 关闭加热")
+    await executeDeviceAction(dNo, "heater", "off", "故障保护: 关闭加热", { protection: true })
   } catch (error) {
     actionErrors.push(`关闭加热失败: ${error.message}`)
   }
   try {
-    await executeDeviceAction(dNo, "pump", "off", "故障散热条件失效: 关闭水泵")
+    if (state.protectionStopPump) await executeDeviceAction(dNo, "pump", "off", "故障保护: 关闭水泵", { protection: true })
   } catch (error) {
     actionErrors.push(`关闭水泵失败: ${error.message}`)
   }
   if (actionErrors.length) {
-    state.faultReason = `${state.faultReason || "故障散热条件失效"}；${actionErrors.join("；")}`
+    const detail = actionErrors.join('；')
+    if (!state.faultReason?.includes(detail)) state.faultReason = `${state.faultReason || "故障散热条件失效"}；${detail}`
   }
   notifyStatusChange(dNo)
   return true
+}
+
+const checkControlConfiguration = async (dNo, params) => {
+  const state = getOrCreateDeviceState(dNo)
+  const active = [FSM_STATES.RUNNING, FSM_STATES.BUILDING_FLOW].includes(state.fsmState)
+  const error = state.configLoadError || validateControlParams(params, { starting: active })
+  state.configError = error
+  if (error) {
+    if (state.fsmState !== FSM_STATES.FAULT && (state.fsmState !== FSM_STATES.STOPPED || state.heaterState === 'on' || state.desiredHeaterState === 'on')) {
+      await triggerFault(dNo, { code: FAULT_CODES.CONTROL_CONFIG_INVALID, reason: error, stopPump: true })
+    }
+    return false
+  }
+  if (active && (state.mode !== 'auto' || (state.configFingerprint && state.configFingerprint !== controlFingerprint(params)))) {
+    state.restartReason = '控温配置已变化，请等待冷却结束后重新启动'
+    await stopAuto(dNo)
+    return false
+  }
+  return true
+}
+
+const runTemperatureControl = async (dNo, params) => {
+  const state = getOrCreateDeviceState(dNo)
+  if (state.mode !== 'auto' || state.fsmState !== FSM_STATES.RUNNING || state.heatInhibited) return
+  let desired = state.desiredHeaterState
+  let remark = '自动回差控温'
+  if (params.temperature_control_strategy === 'pid') {
+    if (state.lastSensors.temp_out <= 0 || getStaleSensors(state).length) return
+    state.pidController.update({ value: state.lastSensors.temp_out, sample: state.sensorSample, params })
+    state.pid = state.pidController.schedule(params, state.published.heater === 'on')
+    if (state.pid.calculationError) {
+      state.configError = state.pid.calculationError
+      await triggerFault(dNo, { code: FAULT_CODES.CONTROL_CONFIG_INVALID, reason: state.configError, stopPump: true })
+      return
+    }
+    desired = state.pid.desired
+    remark = `时间PID: 窗口${state.pid.windowIndex}；输出${state.pid.output.toFixed(2)}%；计划${state.pid.plannedDuty.toFixed(2)}%；${state.pid.limitationReason || '窗口调度'}`
+  } else {
+    if (state.lastSensors.temp_out <= params.target_temperature - params.temperature_hysteresis) desired = 'on'
+    else if (state.lastSensors.temp_out >= params.target_temperature) desired = 'off'
+  }
+  if (desired === state.desiredHeaterState) return
+  // 危险数据立即阻止新开启，故障确认仍交给原有安全联锁。
+  if (desired === 'on' && !heaterSafetyFromConfig(state, params).safe) return
+  try {
+    await executeDeviceAction(dNo, 'heater', desired, remark, { automatic: true, pidWindow: params.temperature_control_strategy === 'pid' ? state.pid.windowIndex : undefined })
+  } catch (error) {
+    await triggerFault(dNo, { code: FAULT_CODES.COMMAND_PUBLISH_FAILED, reason: `控温发布失败: ${error.message}`, stopPump: true })
+  }
 }
 
 const onSensorData = async (dNo, rawData) => {
@@ -662,7 +831,9 @@ const onSensorData = async (dNo, rawData) => {
   const state = getOrCreateDeviceState(dNo)
   const now = Date.now()
   updateSensorState(state, rawData, now)
+  const generation = state.generation
   const { masterMode, params } = await loadDeviceControlConfig(dNo)
+  if (generation !== state.generation) return
   state.mode = masterMode
 
   if (state.fsmState === FSM_STATES.FAULT) {
@@ -670,6 +841,7 @@ const onSensorData = async (dNo, rawData) => {
     notifyStatusChange(dNo)
     return
   }
+  if (!await checkControlConfiguration(dNo, params)) return
   if (await handleSensorTimeouts(dNo, params, now)) return
   const hydraulicDiagnosis = evaluateHydraulicStatus(
     dNo,
@@ -706,21 +878,16 @@ const onSensorData = async (dNo, rawData) => {
   }
 
   if (state.fsmState === FSM_STATES.RUNNING) {
-    const currentTemperature = state.lastSensors.temp_out
-    const lowThreshold = params.target_temperature - params.temperature_hysteresis
-    const highThreshold = params.target_temperature
-    if (currentTemperature <= lowThreshold && state.desiredHeaterState !== "on") {
-      await executeDeviceAction(dNo, "heater", "on", "自动控温: 水温低于下限")
-    } else if (currentTemperature >= highThreshold && state.desiredHeaterState !== "off") {
-      await executeDeviceAction(dNo, "heater", "off", "自动控温: 水温达到目标")
-    }
+    await runTemperatureControl(dNo, params)
     notifyStatusChange(dNo)
     return
   }
 
   if (state.fsmState === FSM_STATES.COOLING) {
     if (state.lastSensors.flow_rate <= 0) {
+      const coolingGeneration = state.generation
       await executeDeviceAction(dNo, "pump", "off", "冷却期间无流量停泵")
+      if (coolingGeneration !== state.generation || state.fsmState !== FSM_STATES.COOLING) return
       state.fsmState = state.coolingExitState
       state.fsmText = FSM_STATE_TEXT[state.fsmState]
       state.countdown = 0
@@ -729,41 +896,67 @@ const onSensorData = async (dNo, rawData) => {
   }
 }
 
-const watchdogTick = async () => {
-  const now = Date.now()
-  for (const [dNo, state] of deviceStateMap) {
-    const { params } = await loadDeviceControlConfig(dNo)
+const watchdogDeviceTick = async (dNo, state, now) => {
+  // 先用最近配置执行关闭/超时保护，再读取新配置，数据库延迟不能延长加热脉冲。
+  if (state.configCache) {
+    const cachedParams = state.configCache.params
     if (state.fsmState === FSM_STATES.FAULT) {
-      await safeguardFaultCooling(dNo, params, now)
-      continue
-    }
-    if (await handleSensorTimeouts(dNo, params, now)) continue
-    if (state.fsmState === FSM_STATES.BUILDING_FLOW) {
-      state.countdown = Math.max(0, state.countdown - 1)
-      if (state.countdown <= 0) {
-        await triggerFault(dNo, {
-          code: FAULT_CODES.BUILD_FLOW_TIMEOUT,
-          reason: `启动未建流(超过${params.build_flow_timeout}s未达到最低流量)`,
-          stopPump: true,
-        })
-      } else notifyStatusChange(dNo)
-      continue
-    }
-    if (state.fsmState === FSM_STATES.COOLING) {
-      state.countdown = Math.max(0, state.countdown - 1)
-      if (state.countdown <= 0) {
-        try {
-          await executeDeviceAction(dNo, "pump", "off", "冷却延时结束自动停泵")
-          state.fsmState = state.coolingExitState
-          state.fsmText = FSM_STATE_TEXT[state.fsmState]
-        } catch (error) {
-          setFaultState(state, FAULT_CODES.COMMAND_PUBLISH_FAILED, `冷却结束关泵发布失败: ${error.message}`)
-          await recordFault(dNo, state.faultCode, state.faultReason)
-        }
+      await safeguardFaultCooling(dNo, cachedParams, now)
+    } else if (await handleSensorTimeouts(dNo, cachedParams, now)) return
+    if (state.fsmState === FSM_STATES.RUNNING && state.pid && cachedParams.temperature_control_strategy === 'pid') {
+      const scheduled = state.pidController.schedule(cachedParams, state.published.heater === 'on')
+      if (scheduled.desired === 'off' && state.desiredHeaterState === 'on') {
+        try { await executeDeviceAction(dNo, 'heater', 'off', `时间PID: 窗口${scheduled.windowIndex}到期关闭；输出${scheduled.output.toFixed(2)}%；计划${scheduled.plannedDuty.toFixed(2)}%`) }
+        catch (error) { await triggerFault(dNo, { code: FAULT_CODES.COMMAND_PUBLISH_FAILED, reason: error.message, stopPump: true }); return }
       }
-      notifyStatusChange(dNo)
     }
   }
+  const { params } = await loadDeviceControlConfig(dNo)
+  if (state.fsmState === FSM_STATES.FAULT) {
+    await safeguardFaultCooling(dNo, params, now)
+    return
+  }
+  if (!await checkControlConfiguration(dNo, params)) return
+  if (await handleSensorTimeouts(dNo, params, now)) return
+  if (state.fsmState === FSM_STATES.RUNNING) {
+    const fault = inspectSafetyConditions(state, params, now, getDeviceDiagnosis(dNo))
+    if (fault) await triggerFault(dNo, fault)
+    else await runTemperatureControl(dNo, params)
+    notifyStatusChange(dNo)
+  }
+  if (state.fsmState === FSM_STATES.BUILDING_FLOW) {
+    state.countdown = Math.max(0, state.countdown - 1)
+    if (state.countdown <= 0) {
+      await triggerFault(dNo, {
+        code: FAULT_CODES.BUILD_FLOW_TIMEOUT,
+        reason: `启动未建流(超过${params.build_flow_timeout}s未达到最低流量)`,
+        stopPump: true,
+      })
+    } else notifyStatusChange(dNo)
+    return
+  }
+  if (state.fsmState === FSM_STATES.COOLING) {
+    state.countdown = Math.max(0, state.countdown - 1)
+    if (state.countdown <= 0) {
+      const coolingGeneration = state.generation
+      try {
+        await executeDeviceAction(dNo, "pump", "off", "冷却延时结束自动停泵")
+        if (coolingGeneration !== state.generation || state.fsmState !== FSM_STATES.COOLING) return
+        state.fsmState = state.coolingExitState
+        state.fsmText = FSM_STATE_TEXT[state.fsmState]
+      } catch (error) {
+        setFaultState(state, FAULT_CODES.COMMAND_PUBLISH_FAILED, `冷却结束关泵发布失败: ${error.message}`)
+        await recordFault(dNo, state.faultCode, state.faultReason)
+      }
+    }
+    notifyStatusChange(dNo)
+  }
+}
+
+const watchdogTick = async () => {
+  // 巡检不能被任一发布/PUBACK阻塞；重叠调用由动作队列去重，安全撤销同步生效。
+  const results = await Promise.allSettled([...deviceStateMap].map(([dNo, state]) => watchdogDeviceTick(dNo, state, Date.now())))
+  for (const result of results) if (result.status === 'rejected') console.error('[WaterControl] 设备巡检失败:', result.reason)
 }
 
 const validateStartConditions = (state, params) => {
@@ -777,30 +970,46 @@ const validateStartConditions = (state, params) => {
 
 const startAuto = async (dNo) => {
   const state = getOrCreateDeviceState(dNo)
-  const { params } = await loadDeviceControlConfig(dNo)
-  validateStartConditions(state, params)
+  if (state.starting || [FSM_STATES.BUILDING_FLOW, FSM_STATES.RUNNING, FSM_STATES.COOLING].includes(state.fsmState)) throw new Error('请等待当前运行或冷却流程结束再启动')
+  state.starting = true
+  const generation = state.generation
   try {
-    await executeDeviceAction(dNo, "heater", "off", "自动运行启动: 初始关闭加热")
-    await executeDeviceAction(dNo, "pump", "on", "自动运行启动: 开启水泵建流")
-  } catch (error) {
-    setFaultState(state, FAULT_CODES.COMMAND_PUBLISH_FAILED, `自动启动指令发布失败: ${error.message}`)
-    await recordFault(dNo, state.faultCode, state.faultReason)
+    const { params } = await loadDeviceControlConfig(dNo)
+    const configError = state.configLoadError || validateControlParams(params, { starting: true })
+    if (configError) throw new Error(configError)
+    validateStartConditions(state, params)
+    if (generation !== state.generation) throw new Error('启动已取消')
+    try {
+      await executeDeviceAction(dNo, "heater", "off", "自动运行启动: 初始关闭加热", { force: true })
+      if (generation !== state.generation) throw new Error('启动已取消')
+      await executeDeviceAction(dNo, "pump", "on", "自动运行启动: 开启水泵建流")
+    } catch (error) {
+      if (generation !== state.generation) throw error
+      await triggerFault(dNo, { code: FAULT_CODES.COMMAND_PUBLISH_FAILED, reason: `自动启动指令发布失败: ${error.message}`, stopPump: true })
+      throw error
+    }
+    if (generation !== state.generation) throw new Error('启动已取消')
+    state.heatInhibited = false
+    state.pidController.reset()
+    state.pid = null
+    state.configFingerprint = controlFingerprint(params)
+    state.restartReason = null
+    state.protectionStopPump = false
+    state.fsmState = FSM_STATES.BUILDING_FLOW
+    state.fsmText = FSM_STATE_TEXT.BUILDING_FLOW
+    state.countdown = params.build_flow_timeout
+    state.faultCode = null
+    state.faultReason = null
+    state.coolingExitState = FSM_STATES.STOPPED
     notifyStatusChange(dNo)
-    throw error
-  }
-  state.fsmState = FSM_STATES.BUILDING_FLOW
-  state.fsmText = FSM_STATE_TEXT.BUILDING_FLOW
-  state.countdown = params.build_flow_timeout
-  state.faultCode = null
-  state.faultReason = null
-  state.coolingExitState = FSM_STATES.STOPPED
-  notifyStatusChange(dNo)
-  return { success: true, message: "自动运行指令已发布，正在建立水循环..." }
+    return { success: true, message: "自动运行指令已发布，正在建立水循环..." }
+  } finally { state.starting = false }
 }
 
 const stopAuto = async (dNo) => {
   const state = getOrCreateDeviceState(dNo)
-  const { params } = await loadDeviceControlConfig(dNo)
+  revokeHeating(state)
+  const { params } = state.configCache || await loadDeviceControlConfig(dNo)
   const wasFaulted = state.fsmState === FSM_STATES.FAULT
   try {
     await executeDeviceAction(dNo, "heater", "off", "用户停止: 立即关闭加热")
@@ -814,7 +1023,7 @@ const stopAuto = async (dNo) => {
     notifyStatusChange(dNo)
     throw error
   }
-  if (wasFaulted) {
+  if (wasFaulted || state.fsmState === FSM_STATES.FAULT) {
     notifyStatusChange(dNo)
     return { success: true, message: "停止指令已发布；设备仍保持故障锁定，请确认安全后复位" }
   }
@@ -834,14 +1043,24 @@ const stopAuto = async (dNo) => {
 
 const resetFault = async (dNo) => {
   const state = getOrCreateDeviceState(dNo)
-  const { params } = await loadDeviceControlConfig(dNo)
+  revokeHeating(state)
+  const generation = state.generation
+  const { params } = state.configCache || await loadDeviceControlConfig(dNo)
+  if (generation !== state.generation) throw new Error('复位期间状态变化，请重新确认故障')
+  const configError = state.configLoadError || validateControlParams(params)
+  if (configError) throw new Error(`故障复位失败：${configError}`)
   const staleSensors = getStaleSensors(state, Date.now(), params.data_timeout)
   if (staleSensors.length) throw new Error(`故障复位失败：${formatStaleSensors(staleSensors)}数据仍超时或无效`)
   const maximumTemperature = Math.max(state.lastSensors.temp_in, state.lastSensors.temp_out)
   if (maximumTemperature >= params.max_safe_temperature) throw new Error(`故障复位失败：当前水温仍达到安全上限(${maximumTemperature}℃)`)
   if (state.lastSensors.pressure >= params.max_safe_pressure) throw new Error(`故障复位失败：当前压力仍达到安全上限(${state.lastSensors.pressure}kPa)`)
-  await executeDeviceAction(dNo, "heater", "off", "故障复位")
-  await executeDeviceAction(dNo, "pump", "off", "故障复位")
+  await executeDeviceAction(dNo, "heater", "off", "故障复位", { force: true })
+  if (generation !== state.generation) throw new Error('复位期间发生新故障，请重新确认')
+  await executeDeviceAction(dNo, "pump", "off", "故障复位", { force: true })
+  if (generation !== state.generation) throw new Error('复位期间发生新故障，请重新确认')
+  if (getStaleSensors(state, Date.now(), params.data_timeout).length
+    || Math.max(state.lastSensors.temp_in, state.lastSensors.temp_out) >= params.max_safe_temperature
+    || state.lastSensors.pressure >= params.max_safe_pressure) throw new Error('复位期间安全条件变化，请重新检查')
   state.fsmState = FSM_STATES.STOPPED
   state.fsmText = FSM_STATE_TEXT.STOPPED
   state.faultCode = null
@@ -867,6 +1086,7 @@ const initEngine = () => {
 }
 
 const stopEngine = () => {
+  for (const state of deviceStateMap.values()) revokeHeating(state)
   if (timerId) {
     clearInterval(timerId)
     timerId = null
@@ -882,9 +1102,15 @@ const __resetForTests = () => {
   broadcastDep = null
   configLoaderDep = null
   stopEngine()
+  monotonicClock = () => performance.now()
 }
 
 module.exports = {
+  invalidateConfig: (dNo) => { getOrCreateDeviceState(dNo).configCachedAt = -Infinity },
+  executeManualAction,
+  __setClockForTests: (clock) => { monotonicClock = clock },
+  checkControlConfiguration,
+  loadDeviceControlConfig,
   DEFAULT_CONTROL_PARAMS,
   FAULT_CODES,
   FSM_STATES,

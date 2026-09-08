@@ -5,6 +5,8 @@ const thermalAnalysisService = require("../services/thermalAnalysisService")
 
 test.beforeEach(() => {
   thermalAnalysisService.__resetForTests()
+  thermalAnalysisService.__setConfigLoaderForTests(async () => [])
+  thermalAnalysisService.__setBroadcastForTests(() => {})
 })
 
 test("thermalAnalysis: 两水箱温差与供热温差计算准确性", async () => {

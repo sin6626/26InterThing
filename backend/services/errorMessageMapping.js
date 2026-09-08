@@ -17,6 +17,7 @@ const DEFAULT_ERROR_MAPPINGS = [
   { e_no: "COMMAND_PUBLISH_FAILED", type: "2", e_msg: "控制指令发布超时" },
   { e_no: "E001", type: "3", e_msg: "温度传感器连接超时" },
   { e_no: "E002", type: "2", e_msg: "通信连接异常" },
+  { e_no: 'CONTROL_CONFIG_INVALID', type: '6', e_msg: '控温配置无效，已停止加热，请修正参数并人工复位' },
 ]
 
 // 短时内存缓存：缓存从数据库读取的完整错误映射列表，TTL 为 2 秒

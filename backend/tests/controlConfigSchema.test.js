@@ -38,6 +38,8 @@ test("ensureWaterControlConfigs idempotently seeds every required water control 
       "pipe_inner_diameter",
       "min_operating_pressure",
       "pressure_flow_diagnosis_confirm_time",
+      'temperature_control_strategy', 'pid_kp', 'pid_ki', 'pid_kd',
+      'pid_cycle_time', 'pid_min_on_time', 'pid_min_off_time',
     ],
   )
   assert.ok(calls.every((call) => !call.sql.includes("ON DUPLICATE KEY UPDATE")))
@@ -70,4 +72,24 @@ test("ensureWaterControlConfigs reuses semantic topics and falls back to generat
     call.sql.startsWith("INSERT IGNORE INTO t_direct_global")
       && call.params[0] === 120
   )))
+})
+
+test('旧PID节点原位改名，保留配置ID及设备覆盖，规范节点存在时不改旧节点', async () => {
+  for (const canonicalExists of [false, true]) {
+    const calls = []
+    await ensureWaterControlConfigs(async (sql, params) => {
+      calls.push({ sql, params })
+      if (sql.includes('WHERE topic = ?')) {
+        if (params[0] === 'pid_min_on_time' && canonicalExists) return [{ id: 150 }]
+        if (params[0] === 'pid_min_open_time') return [{ id: 140 }]
+        return []
+      }
+      if (sql.startsWith('SELECT')) return []
+      return { insertId: 200 }
+    })
+    const renames = calls.filter(call => call.sql.startsWith('UPDATE t_direct_config SET topic'))
+    assert.equal(renames.length, canonicalExists ? 0 : 1)
+    if (!canonicalExists) assert.deepEqual(renames[0].params, ['pid_min_on_time', 140, 'pid_min_open_time'])
+    assert.ok(!calls.some(call => /UPDATE t_direct SET|DELETE|DROP/.test(call.sql)))
+  }
 })

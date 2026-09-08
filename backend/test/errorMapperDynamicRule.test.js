@@ -58,7 +58,7 @@ const runTests = async () => {
   console.log("=== 所有后台错误码语义映射测试全部通过！===")
 }
 
-runTests().then(() => process.exit(0)).catch((err) => {
+runTests().catch((err) => {
   console.error("测试失败:", err)
-  process.exit(1)
-})
+  process.exitCode = 1
+}).finally(() => require('../db').end())

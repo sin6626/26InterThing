@@ -44,6 +44,7 @@ const deviceSql = `
     c.value_map,
     c.options,
     COALESCE(d.value, g.value, 'off') AS value,
+    d.value AS device_value,
     COALESCE(pd.value, pg.value) AS papa_value
   FROM t_direct_config c
   LEFT JOIN t_direct d ON d.config_id = c.id AND d.d_no = ?

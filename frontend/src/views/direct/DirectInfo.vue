@@ -13,7 +13,7 @@ import {
 import { useDeviceNumbers } from '@/composables/useDeviceNumbers'
 import { useDeviceStatus } from '@/composables/useDeviceStatus'
 import { useSwitchStore } from '@/stores/switch'
-import { numericControlTopics, validateControlValue } from '@/utils/controlValidation'
+import { numericControlTopics, validateControlValue, filterControlTree } from '@/utils/controlValidation'
 
 // 当前正在查看或下发指令的设备编号。
 const d_noValue = ref('')
@@ -31,6 +31,8 @@ const defaultProps = {
 
 const globalTreeData = ref([])
 const deviceTreeData = ref([])
+const visibleGlobalTree = computed(() => filterControlTree(globalTreeData.value))
+const visibleDeviceTree = computed(() => filterControlTree(deviceTreeData.value))
 const actionLoading = ref(false)
 const treeKey = ref(0)
 const sensorLabels = {
@@ -272,11 +274,25 @@ onMounted(async () => {
       <span v-if="currentControl.faultReason" class="danger-text">{{ currentControl.faultReason }}</span>
     </div>
 
+    <div v-if="currentControl" class="control-status-panel">
+      <el-tag>{{ currentControl.controlStrategy === 'pid' ? '时间比例 PID' : '回差控温' }}</el-tag>
+      <template v-if="currentControl.pid">
+        <span>目标 / 出口温度：{{ currentControl.pid.target }} / {{ currentControl.pid.measurement ?? '—' }} ℃</span>
+        <span>PID 输出：{{ currentControl.pid.output.toFixed(1) }}%</span>
+        <span>计划占空比：{{ currentControl.pid.plannedDuty.toFixed(1) }}%</span>
+        <span>窗口剩余：{{ currentControl.pid.windowRemaining.toFixed(1) }} 秒</span>
+        <span v-if="currentControl.pid.limitationReason">{{ currentControl.pid.limitationReason }}</span>
+      </template>
+      <span v-if="currentControl.configError" class="danger-text">{{ currentControl.configError }}</span>
+      <span v-if="currentControl.restartReason">{{ currentControl.restartReason }}</span>
+      <span v-if="currentControl.controlStrategy === 'pid'">Kp 需整定后启动；20/3/3 秒为调试候选值，请核对继电器规格。占空比为发布计划，实际状态以设备反馈为准。</span>
+    </div>
+
     <h3>全局指令</h3>
     <el-tree
       :key="`global-${treeKey}`"
       node-key="id"
-      :data="globalTreeData"
+      :data="visibleGlobalTree"
       :props="defaultProps"
       :expand-on-click-node="false"
       class="custom-tree"
@@ -288,7 +304,11 @@ onMounted(async () => {
             <span>{{ node.label }}</span>
           </div>
           <div class="right">
-            <template v-if="data.f_type === '1'">
+            <el-select v-if="data.topic === 'temperature_control_strategy'" v-model="data.value" style="width: 160px" @change="changeGlobalHandle(data)">
+              <el-option label="回差控温" value="hysteresis" />
+              <el-option label="时间比例 PID" value="pid" />
+            </el-select>
+            <template v-else-if="data.f_type === '1'">
               <el-switch v-model="data.value" @change="changeGlobalHandle(data)" />
             </template>
             <el-input-number
@@ -374,7 +394,7 @@ onMounted(async () => {
       <el-tree
         :key="`device-${treeKey}`"
         node-key="id"
-        :data="deviceTreeData"
+        :data="visibleDeviceTree"
         :props="defaultProps"
         :expand-on-click-node="false"
         class="custom-tree"
@@ -386,7 +406,11 @@ onMounted(async () => {
               <span>{{ node.label }}</span>
             </div>
             <div class="right">
-              <template v-if="data.f_type === '1'">
+              <el-select v-if="data.topic === 'temperature_control_strategy'" v-model="data.value" style="width: 160px" @change="changeDeviceHandle(data)">
+                <el-option label="回差控温" value="hysteresis" />
+                <el-option label="时间比例 PID" value="pid" />
+              </el-select>
+              <template v-else-if="data.f_type === '1'">
                 <el-switch v-model="data.value" @change="changeDeviceHandle(data)" />
               </template>
               <el-input-number

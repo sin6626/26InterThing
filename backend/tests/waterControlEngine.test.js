@@ -775,6 +775,9 @@ test("故障状态下执行停止不会解除故障锁定", async () => {
 })
 
 test("故障散热失效时即使关加热发布失败也继续尝试停泵", async () => {
+  let clock = 0
+  waterControlEngine.__setClockForTests(() => clock)
+  waterControlEngine.__setMqttClientForTests({ publishToDevice: async () => { throw new Error('首次关闭失败') } })
   const dNo = "TEST_FAULT_COOLING_PUMP_PRIORITY"
   const state = waterControlEngine.getOrCreateDeviceState(dNo)
   state.fsmState = FSM_STATES.RUNNING
@@ -792,6 +795,7 @@ test("故障散热失效时即使关加热发布失败也继续尝试停泵", as
   assert.equal(state.faultCode, "OVER_TEMPERATURE")
 
   const attemptedTopics = []
+  clock = 1000
   waterControlEngine.__setMqttClientForTests({
     publishToDevice: async (_topic, payload) => {
       attemptedTopics.push(payload.topic)

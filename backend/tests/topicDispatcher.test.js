@@ -3,6 +3,22 @@ const assert = require("node:assert/strict")
 
 const { createTopicDispatcher } = require("../mqtt/topicDispatcher")
 
+// 分发单测不启动实际流量/热分析数据库副作用；计算行为由各服务单测覆盖。
+const serviceMocks = [
+  ['../services/waterFlowService', { onSensorFlowData: async () => {} }],
+  ['../services/thermalAnalysisService', { onSensorThermalData: async () => {} }],
+].map(([name, exports]) => {
+  const id = require.resolve(name), previous = require.cache[id]
+  require.cache[id] = { id, filename: id, loaded: true, exports }
+  return { id, previous }
+})
+test.after(() => {
+  for (const { id, previous } of serviceMocks) {
+    if (previous) require.cache[id] = previous
+    else delete require.cache[id]
+  }
+})
+
 test("createTopicDispatcher ignores heartbeat messages when heartbeat is disabled", async () => {
   const sideEffects = []
   const dispatch = createTopicDispatcher({

@@ -5,6 +5,42 @@ const directHistoryRepository = require("../repositories/directHistoryRepository
 const directRepository = require("../repositories/directRepository")
 const { buildTree } = require("../utils/directTree")
 const { createTimeSyncService } = require("./timeSyncService")
+const { isPidConfig, readControlParams, validateControlParams, canonicalTopic } = require('./pidControlConfig')
+const isLocalTemperatureConfig = topic => isPidConfig(topic) || topic === 'target_temperature'
+
+const validateConfigUpdate = async (config, value, dNo) => {
+  const { DEFAULT_CONTROL_PARAMS } = require('./waterControlEngine')
+  if (!config || !(canonicalTopic(config.topic) in DEFAULT_CONTROL_PARAMS)) return
+  const validate = (rows) => {
+    const updated = rows.map(row => row.id === config.id ? { ...row, value } : row)
+    const error = validateControlParams(readControlParams(updated, DEFAULT_CONTROL_PARAMS))
+    if (error) throw new Error(error)
+  }
+  if (dNo) validate(await directRepository.getDeviceConfigRows(dNo))
+  else {
+    validate(await directRepository.getGlobalConfigRows())
+    for (const device of await directRepository.getAllDeviceNumbers()) {
+      const rows = await directRepository.getDeviceConfigRows(device)
+      // 有设备覆盖时，该设备的有效值不随全局默认值变化。
+      if (rows.find(row => row.id === config.id)?.device_value == null) validate(rows)
+    }
+  }
+}
+
+const saveLocalConfigHistory = async (config, newValue, oldValue, dNo) => {
+  const engine = require('./waterControlEngine')
+  const devices = dNo ? [dNo] : await directRepository.getAllDeviceNumbers()
+  for (const device of devices) {
+    engine.invalidateConfig(device)
+    const { params } = await engine.loadDeviceControlConfig(device)
+    await engine.checkControlConfiguration(device, params)
+    engine.notifyStatusChange(device)
+  }
+  await directHistoryRepository.insertDirectHistory({
+    config_id: config.id, d_no: dNo, direct_name: config.t_name, direct_type: config.topic,
+    new_value: newValue, old_value: oldValue, result: 'success', remark: '应用层控温参数保存（无需MQTT下发）',
+  })
+}
 
 // 指令服务层：
 // 负责“读指令树、写数据库、下发 MQTT”。当前不使用心跳状态拦截指令。
@@ -87,6 +123,13 @@ const dispatchGlobalCommand = async (config, value) => {
 
   const results = []
   for (const dNo of deviceNumbers) {
+    if (['heater', 'pump'].includes(config?.topic)) {
+      try {
+        await require('./waterControlEngine').executeManualAction(dNo, config.topic, value)
+        results.push({ dNo, status: 'published' })
+      } catch (error) { results.push({ dNo, status: 'failed', error: error.message }) }
+      continue
+    }
     const commandContext = beginControlCommand(dNo, config, value)
     try {
       // 先把页面/数据库里的值翻译成设备端真正认识的 payload。
@@ -122,19 +165,18 @@ const updateGlobalDirect = async ({ config_id, f_type, value }) => {
     directRepository.getDirectConfigById(config_id),
   ])
 
-  // 手动开启加热前进行安全拦截审查
-  if (config?.topic === "heater" && newValue === "on") {
-    const waterControlEngine = require("./waterControlEngine")
-    const deviceNumbers = await directRepository.getAllDeviceNumbers()
-    for (const dNo of deviceNumbers) {
-      const safety = await waterControlEngine.checkHeaterSafety(dNo)
-      if (!safety.safe) {
-        throw new Error(`设备 ${dNo} 安全拦截: ${safety.reason}`)
-      }
-    }
+  await validateConfigUpdate(config, newValue, null)
+
+  if (['heater', 'pump'].includes(config?.topic)) {
+    const results = await dispatchGlobalCommand(config, newValue)
+    const failed = results.filter(result => result.status !== 'published')
+    if (failed.length) throw new Error(failed.map(result => `${result.dNo}: ${result.error}`).join('；'))
+    await directRepository.upsertGlobalDirect(config_id, newValue)
+    return
   }
 
   await directRepository.upsertGlobalDirect(config_id, newValue)
+  if (isLocalTemperatureConfig(config?.topic)) return saveLocalConfigHistory(config, newValue, oldValue)
 
   // 如果更新的是主控制模式(config_id=0 或 topic=master)，同步更新单设备表中的记录，避免单设备残留旧值覆盖全局
   if (config?.topic === "master" || String(config_id) === "0") {
@@ -153,6 +195,7 @@ const updateGlobalDirect = async ({ config_id, f_type, value }) => {
     for (const dNo of deviceNumbers) {
       const state = waterControlEngine.getOrCreateDeviceState(dNo)
       if (config.topic === "master" || String(config_id) === "0") {
+        waterControlEngine.invalidateConfig(dNo)
         state.mode = newValue === "on" ? "auto" : "manual"
         if (newValue === "off") {
           try {
@@ -205,6 +248,7 @@ const dispatchDeviceCommand = async (dNo, configId, newValue) => {
   if (!config) {
     throw new Error("未找到对应的指令配置")
   }
+  if (['heater', 'pump'].includes(config.topic)) return require('./waterControlEngine').executeManualAction(dNo, config.topic, newValue)
 
   const commandEnvelope = buildDeviceCommandEnvelope({
     d_no: dNo,
@@ -234,21 +278,21 @@ const updateDeviceDirect = async (dNo, { config_id, f_type, value }) => {
     directRepository.getDeviceDirectValue(config_id, dNo),
     directRepository.getDirectConfigById(config_id),
   ])
-
-  // 手动开启加热前进行安全拦截审查
-  if (config?.topic === "heater" && newValue === "on") {
-    const waterControlEngine = require("./waterControlEngine")
-    const safety = await waterControlEngine.checkHeaterSafety(dNo)
-    if (!safety.safe) {
-      throw new Error(`安全拦截: ${safety.reason}`)
-    }
+  await validateConfigUpdate(config, newValue, dNo)
+  if (['heater', 'pump'].includes(config?.topic)) {
+    await require('./waterControlEngine').executeManualAction(dNo, config.topic, newValue)
+    const result = await directRepository.updateDeviceDirectValue(config_id, newValue, dNo)
+    if (result.affectedRows === 0) await directRepository.insertDeviceDirectValue(config_id, newValue, dNo)
+    return
   }
+  if ((config?.topic === 'master' || String(config_id) === '0') && newValue === 'off') await require('./waterControlEngine').stopAuto(dNo)
 
   const results = await directRepository.updateDeviceDirectValue(config_id, newValue, dNo)
 
   if (results.affectedRows === 0) {
     await directRepository.insertDeviceDirectValue(config_id, newValue, dNo)
   }
+  if (isLocalTemperatureConfig(config?.topic)) return saveLocalConfigHistory(config, newValue, oldValue, dNo)
 
   try {
     const dispatchResult = await dispatchDeviceCommand(dNo, config_id, newValue)
@@ -258,6 +302,7 @@ const updateDeviceDirect = async (dNo, { config_id, f_type, value }) => {
     const waterControlEngine = require("./waterControlEngine")
     const state = waterControlEngine.getOrCreateDeviceState(dNo)
     if (config?.topic === "master" || String(config_id) === "0") {
+      waterControlEngine.invalidateConfig(dNo)
       state.mode = newValue === "on" ? "auto" : "manual"
       if (newValue === "off") await waterControlEngine.stopAuto(dNo)
     }
@@ -336,6 +381,7 @@ const startWaterControl = async (dNo) => {
 
   await directRepository.upsertGlobalDirect(rootConfigId, "on")
   if (dNo) await directRepository.updateDeviceDirectValue(rootConfigId, "on", dNo)
+  waterControlEngine.invalidateConfig(dNo)
 
   try {
     return await waterControlEngine.startAuto(dNo)
