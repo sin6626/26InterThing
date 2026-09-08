@@ -30,6 +30,8 @@ const DEFAULT_CONTROL_PARAMS = {
   pressure_flow_diagnosis_confirm_time: 2.0,
   temperature_rate_window: 60,
   temp_reversed_confirm_time: 5,
+  dry_heating_timeout: 15,
+  dry_heating_temp_diff: 0.2,
 }
 
 const FSM_STATES = {
@@ -61,6 +63,7 @@ const FAULT_CODES = {
   BUILD_FLOW_TIMEOUT: "BUILD_FLOW_TIMEOUT",
   COMMAND_PUBLISH_FAILED: "COMMAND_PUBLISH_FAILED",
   LOW_FLOW: "LOW_FLOW",
+  DRY_HEATING_NO_TEMP_RISE: "DRY_HEATING_NO_TEMP_RISE",
   OVER_PRESSURE: "OVER_PRESSURE",
   OVER_TEMPERATURE: "OVER_TEMPERATURE",
   SENSOR_FLOW_TIMEOUT: "SENSOR_FLOW_TIMEOUT",
@@ -91,6 +94,11 @@ const getOrCreateDeviceState = (dNo) => {
       coolingExitState: FSM_STATES.STOPPED,
       lowFlowStartTime: 0,
       tempReversedStartTime: 0,
+      dryHeatingStartTime: 0,
+      dryHeatingBaseTemp: null,
+      dryHeatingAccumulatedMs: 0,
+      dryHeatingLastActiveTime: 0,
+      dryHeatingLastDeactiveTime: 0,
       zeroStartTime: {
         temp_in: 0,
         temp_out: 0,
@@ -801,6 +809,51 @@ const inspectSafetyConditions = (state, params, now, hydraulicDiagnosis = null) 
       stopPump: pumpActive && !canCoolSafely,
     }
   }
+
+  // 无温升干烧判定：加热开启且水流正常循环中，持续达到 dry_heating_timeout 出口温度无有效温升（温升 < dry_heating_temp_diff）
+  const dryHeatingTimeout = Number(params.dry_heating_timeout) || 15
+  const dryHeatingTempDiff = Number(params.dry_heating_temp_diff) || 0.2
+  const isHeaterHeating = pumpActive && flow >= params.min_safe_flow && heaterActive && typeof tempOut === "number" && Number.isFinite(tempOut) && tempOut > 0
+
+  if (isHeaterHeating) {
+    if (state.dryHeatingLastDeactiveTime) {
+      state.dryHeatingLastActiveTime = now
+      state.dryHeatingLastDeactiveTime = 0
+    }
+    if (!state.dryHeatingStartTime) {
+      state.dryHeatingStartTime = now
+      state.dryHeatingBaseTemp = tempOut
+      state.dryHeatingAccumulatedMs = 0
+      state.dryHeatingLastActiveTime = now
+    } else {
+      const deltaMs = Math.max(0, now - (state.dryHeatingLastActiveTime || now))
+      state.dryHeatingLastActiveTime = now
+      state.dryHeatingAccumulatedMs = (state.dryHeatingAccumulatedMs || 0) + deltaMs
+
+      const tempRise = tempOut - state.dryHeatingBaseTemp
+      if (tempRise >= dryHeatingTempDiff) {
+        // 出口水温有显著温升，刷新基准温度并清零累计时间
+        state.dryHeatingBaseTemp = tempOut
+        state.dryHeatingAccumulatedMs = 0
+        state.dryHeatingStartTime = now
+      } else if (state.dryHeatingAccumulatedMs >= dryHeatingTimeout * 1000) {
+        const canCoolSafely = pumpActive && flow >= params.min_safe_flow && pressure < params.max_safe_pressure
+        return {
+          code: FAULT_CODES.DRY_HEATING_NO_TEMP_RISE,
+          reason: `加热无温升干烧保护(加热累计${(state.dryHeatingAccumulatedMs / 1000).toFixed(0)}s温升仅${tempRise.toFixed(2)}℃ < ${dryHeatingTempDiff}℃，基准${state.dryHeatingBaseTemp.toFixed(1)}℃/当前${tempOut.toFixed(1)}℃)`,
+          stopPump: pumpActive && !canCoolSafely,
+        }
+      }
+    }
+  } else {
+    if (!state.dryHeatingLastDeactiveTime) state.dryHeatingLastDeactiveTime = now
+    if (now - state.dryHeatingLastDeactiveTime > 30000 || state.fsmState === FSM_STATES.STOPPED || state.fsmState === FSM_STATES.FAULT) {
+      state.dryHeatingStartTime = 0
+      state.dryHeatingBaseTemp = null
+      state.dryHeatingAccumulatedMs = 0
+      state.dryHeatingLastActiveTime = 0
+    }
+  }
   return null
 }
 
@@ -1182,6 +1235,11 @@ const resetFault = async (dNo) => {
   state.countdown = 0
   state.lowFlowStartTime = 0
   state.tempReversedStartTime = 0
+  state.dryHeatingStartTime = 0
+  state.dryHeatingBaseTemp = null
+  state.dryHeatingAccumulatedMs = 0
+  state.dryHeatingLastActiveTime = 0
+  state.dryHeatingLastDeactiveTime = 0
   if (state.zeroStartTime) {
     state.zeroStartTime = { temp_in: 0, temp_out: 0, flow_rate: 0, pressure: 0 }
   }

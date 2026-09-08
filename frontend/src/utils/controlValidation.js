@@ -19,6 +19,8 @@ export const numericControlTopics = new Set([
   'pipe_inner_diameter',
   'device_offline_timeout',
   'temp_reversed_confirm_time',
+  'dry_heating_timeout',
+  'dry_heating_temp_diff',
 ])
 
 const flattenTree = (nodes) => nodes.flatMap((node) => [node, ...flattenTree(node.children || [])])

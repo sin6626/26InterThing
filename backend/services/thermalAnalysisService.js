@@ -154,7 +154,7 @@ const onSensorThermalData = async (dNo, rawData, now = Date.now()) => {
   state.heatingRateIn = roundNumber(rateIn, 2)
   state.heatingRateOut = roundNumber(rateOut, 2)
 
-  // 5. 温差计算：两水箱温差幅度取绝对值，有效供热温差保留方向 Tout - Tin
+  // 5. 温差计算：两水箱温差幅度维持绝对值展示，供热温差保留 Tout - Tin 方向
   const diff = rawTempOut - rawTempIn
   const absDiff = Math.abs(diff)
   state.tempDiff = roundNumber(absDiff, 2)
