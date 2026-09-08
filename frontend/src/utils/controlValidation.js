@@ -48,7 +48,6 @@ export const validateControlValue = (data, tree) => {
       .map((node) => [node.topic, Number(node.value)]),
   )
   values[data.topic] = numericValue
-  if (values.target_temperature + (values.pid_overshoot_allowance ?? 0.1) >= values.max_safe_temperature) throw new Error('PID 强制关热温度必须低于最高安全温度')
   if ((values.pid_resume_hysteresis ?? 0.3) >= values.target_temperature) throw new Error('PID 恢复回差必须小于目标温度')
   const cycle = values.pid_cycle_time ?? 20
   const minOn = values.pid_min_on_time ?? values.pid_min_open_time ?? 3
@@ -61,6 +60,7 @@ export const validateControlValue = (data, tree) => {
   ) {
     throw new Error('最高安全温度必须大于目标温度')
   }
+  if (values.target_temperature + (values.pid_overshoot_allowance ?? 0.1) >= values.max_safe_temperature) throw new Error('PID 强制关热温度必须低于最高安全温度')
   if (
     Number.isFinite(values.temperature_hysteresis)
     && Number.isFinite(values.target_temperature)
