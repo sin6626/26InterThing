@@ -131,6 +131,11 @@ const getOrCreateDeviceState = (dNo) => {
       restartReason: null,
       protectionStopPump: false,
       lastHeaterOff: monotonicClock(),
+      manualPumpTracking: {
+        startedAt: 0,
+        flowEstablished: false,
+        protecting: false,
+      },
     })
   }
   return deviceStateMap.get(dNo)
@@ -347,6 +352,17 @@ const executeManualAction = async (dNo, topic, value) => {
   try {
     const result = await executeDeviceAction(dNo, topic, value, '手动控制', { manual: true })
     if (result?.cancelled) throw new Error('操作已取消或尚未满足最短关闭时间')
+    if (topic === 'pump') {
+      if (value === 'on') {
+        state.manualPumpTracking.startedAt = monotonicClock()
+        state.manualPumpTracking.flowEstablished = false
+        state.manualPumpTracking.protecting = false
+      } else {
+        state.manualPumpTracking.startedAt = 0
+        state.manualPumpTracking.flowEstablished = false
+        state.manualPumpTracking.protecting = false
+      }
+    }
     notifyStatusChange(dNo)
     return { status: 'published' }
   } catch (error) {
@@ -403,6 +419,7 @@ const getDeviceControlStatus = (dNo) => {
     configError: state.configError,
     restartReason: state.restartReason,
     pid: state.pid ? { ...state.pid, configError: state.configError } : null,
+    manualPumpTracking: { ...state.manualPumpTracking },
   }
 }
 
@@ -862,6 +879,62 @@ const runTemperatureControl = async (dNo, params) => {
   }
 }
 
+const evaluateManualPumpIdling = async (dNo, state, params) => {
+  if (state.fsmState !== FSM_STATES.STOPPED || state.starting) return
+
+  const pumpActive = state.pumpState === "on" || state.desiredPumpState === "on"
+  if (!pumpActive) {
+    if (state.manualPumpTracking.startedAt > 0) {
+      state.manualPumpTracking.startedAt = 0
+      state.manualPumpTracking.flowEstablished = false
+      state.manualPumpTracking.protecting = false
+    }
+    return
+  }
+
+  const now = monotonicClock()
+  if (!state.manualPumpTracking.startedAt) {
+    state.manualPumpTracking.startedAt = now
+    state.manualPumpTracking.flowEstablished = false
+    state.manualPumpTracking.protecting = false
+  }
+
+  const currentFlow = Number(state.lastSensors.flow_rate)
+  const minSafeFlow = Number(params.min_safe_flow ?? DEFAULT_CONTROL_PARAMS.min_safe_flow)
+  const buildFlowTimeout = Number(params.build_flow_timeout ?? DEFAULT_CONTROL_PARAMS.build_flow_timeout)
+
+  if (Number.isFinite(currentFlow) && currentFlow >= minSafeFlow) {
+    state.manualPumpTracking.flowEstablished = true
+    return
+  }
+
+  if (!state.manualPumpTracking.flowEstablished) {
+    const elapsed = now - state.manualPumpTracking.startedAt
+    if (elapsed < buildFlowTimeout * 1000) {
+      return
+    }
+
+    if (state.manualPumpTracking.protecting) return
+    state.manualPumpTracking.protecting = true
+
+    const reason = `水泵启动建流超时(超过${buildFlowTimeout}s未达到最低流量)，疑似水泵空转已强制停泵保护`
+    console.warn(`[WaterControl][PUMP_IDLING] 设备 ${dNo} 手动模式下空转: ${reason}`)
+
+    try {
+      await executeDeviceAction(dNo, "pump", "off", "水泵空转保护自动关泵")
+    } catch (err) {
+      console.error(`[WaterControl] 空转保护关泵发布失败: ${err.message}`)
+    }
+
+    await recordFault(dNo, "HYDRAULIC_PUMP_ABNORMAL", reason)
+
+    state.manualPumpTracking.startedAt = 0
+    state.manualPumpTracking.flowEstablished = false
+    state.manualPumpTracking.protecting = false
+    notifyStatusChange(dNo)
+  }
+}
+
 const onSensorData = async (dNo, rawData) => {
   if (!rawData || !dNo) return
   const state = getOrCreateDeviceState(dNo)
@@ -898,6 +971,7 @@ const onSensorData = async (dNo, rawData) => {
     return
   }
   if (state.mode !== "auto" || state.fsmState === FSM_STATES.STOPPED) {
+    await evaluateManualPumpIdling(dNo, state, params)
     notifyStatusChange(dNo)
     return
   }
@@ -965,7 +1039,7 @@ const watchdogDeviceTick = async (dNo, state, now) => {
     if (state.countdown <= 0) {
       await triggerFault(dNo, {
         code: FAULT_CODES.BUILD_FLOW_TIMEOUT,
-        reason: `启动未建流(超过${params.build_flow_timeout}s未达到最低流量)`,
+        reason: `启动未建流(超过${params.build_flow_timeout}s未达到最低流量)，疑似水泵空转已停泵保护`,
         stopPump: true,
       })
     } else notifyStatusChange(dNo)
@@ -986,6 +1060,10 @@ const watchdogDeviceTick = async (dNo, state, now) => {
       }
     }
     notifyStatusChange(dNo)
+    return
+  }
+  if (state.fsmState === FSM_STATES.STOPPED) {
+    await evaluateManualPumpIdling(dNo, state, params)
   }
 }
 

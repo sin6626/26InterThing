@@ -10,7 +10,7 @@ const DEFAULT_ERROR_MAPPINGS = [
   { e_no: "OVER_PRESSURE", type: "6", e_msg: "管路超压急停保护" },
   { e_no: "OVER_TEMPERATURE", type: "6", e_msg: "水温超限散热保护" },
   { e_no: "LOW_FLOW", type: "6", e_msg: "失流干烧保护" },
-  { e_no: "BUILD_FLOW_TIMEOUT", type: "6", e_msg: "水泵启动建流超时" },
+  { e_no: "BUILD_FLOW_TIMEOUT", type: "6", e_msg: "水泵启动建流超时(疑似水泵空转)" },
   { e_no: "SENSOR_FLOW_TIMEOUT", type: "3", e_msg: "流量传感器数据超时" },
   { e_no: "SENSOR_TEMPERATURE_TIMEOUT", type: "3", e_msg: "温度传感器数据超时" },
   { e_no: "SENSOR_PRESSURE_TIMEOUT", type: "3", e_msg: "压力传感器数据超时" },
