@@ -63,6 +63,7 @@ const FAULT_CODES = {
   BUILD_FLOW_TIMEOUT: "BUILD_FLOW_TIMEOUT",
   COMMAND_PUBLISH_FAILED: "COMMAND_PUBLISH_FAILED",
   LOW_FLOW: "LOW_FLOW",
+  PUMP_IDLING: "PUMP_IDLING",
   DRY_HEATING_NO_TEMP_RISE: "DRY_HEATING_NO_TEMP_RISE",
   OVER_PRESSURE: "OVER_PRESSURE",
   OVER_TEMPERATURE: "OVER_TEMPERATURE",
@@ -772,6 +773,26 @@ const inspectSafetyConditions = (state, params, now, hydraulicDiagnosis = null) 
     ].includes(hydraulicDiagnosis.code)) {
       diagSuffix = ` [联合诊断: ${hydraulicDiagnosis.name}]`
     }
+
+    const heaterActive = state.heaterState === "on" || state.desiredHeaterState === "on"
+    if (heaterActive) {
+      return {
+        code: FAULT_CODES.LOW_FLOW,
+        reason: `失流干烧保护(运行中流量过低: ${flow.toFixed(2)}L/min < ${params.min_safe_flow}L/min，加热中水流缺失紧急切断加热)${diagSuffix}`,
+        stopPump: true,
+      }
+    }
+
+    const minOperatingPressure = Number(params.min_operating_pressure ?? DEFAULT_CONTROL_PARAMS.min_operating_pressure ?? 20.0)
+    const isLowPressure = typeof pressure === "number" && Number.isFinite(pressure) && pressure < minOperatingPressure
+    if (isLowPressure) {
+      return {
+        code: FAULT_CODES.PUMP_IDLING,
+        reason: `水泵空转保护(低压低流未吸上水: 压力${pressure.toFixed(1)}kPa < ${minOperatingPressure}kPa，流量${flow.toFixed(2)}L/min < ${params.min_safe_flow}L/min)${diagSuffix}`,
+        stopPump: true,
+      }
+    }
+
     return { code: FAULT_CODES.LOW_FLOW, reason: `运行中流量过低(${flow.toFixed(2)}L/min < ${params.min_safe_flow}L/min)${diagSuffix}`, stopPump: true }
   }
   if (overTemperature) {
@@ -953,8 +974,10 @@ const evaluateManualPumpIdling = async (dNo, state, params) => {
   }
 
   const currentFlow = Number(state.lastSensors.flow_rate)
+  const currentPressure = Number(state.lastSensors.pressure)
   const minSafeFlow = Number(params.min_safe_flow ?? DEFAULT_CONTROL_PARAMS.min_safe_flow)
   const buildFlowTimeout = Number(params.build_flow_timeout ?? DEFAULT_CONTROL_PARAMS.build_flow_timeout)
+  const minOperatingPressure = Number(params.min_operating_pressure ?? DEFAULT_CONTROL_PARAMS.min_operating_pressure ?? 20.0)
 
   if (Number.isFinite(currentFlow) && currentFlow >= minSafeFlow) {
     state.manualPumpTracking.flowEstablished = true
@@ -970,7 +993,10 @@ const evaluateManualPumpIdling = async (dNo, state, params) => {
     if (state.manualPumpTracking.protecting) return
     state.manualPumpTracking.protecting = true
 
-    const reason = `水泵启动建流超时(超过${buildFlowTimeout}s未达到最低流量)，疑似水泵空转已强制停泵保护`
+    const isLowPressure = Number.isFinite(currentPressure) && currentPressure < minOperatingPressure
+    const reason = isLowPressure
+      ? `水泵启动建流超时(低压低流未吸上水: 压力${currentPressure.toFixed(1)}kPa < ${minOperatingPressure}kPa，流量${Number.isFinite(currentFlow) ? currentFlow.toFixed(2) : 0}L/min < ${minSafeFlow}L/min)，疑似水泵空转已强制停泵保护`
+      : `水泵启动建流超时(超过${buildFlowTimeout}s未达到最低流量)，疑似水泵空转已强制停泵保护`
     console.warn(`[WaterControl][PUMP_IDLING] 设备 ${dNo} 手动模式下空转: ${reason}`)
 
     try {
@@ -979,7 +1005,7 @@ const evaluateManualPumpIdling = async (dNo, state, params) => {
       console.error(`[WaterControl] 空转保护关泵发布失败: ${err.message}`)
     }
 
-    await recordFault(dNo, "HYDRAULIC_PUMP_ABNORMAL", reason)
+    await recordFault(dNo, "PUMP_IDLING", reason)
 
     state.manualPumpTracking.startedAt = 0
     state.manualPumpTracking.flowEstablished = false
@@ -1092,7 +1118,7 @@ const watchdogDeviceTick = async (dNo, state, now) => {
     if (state.countdown <= 0) {
       await triggerFault(dNo, {
         code: FAULT_CODES.BUILD_FLOW_TIMEOUT,
-        reason: `启动未建流(超过${params.build_flow_timeout}s未达到最低流量)，疑似水泵空转已停泵保护`,
+        reason: `启动未建流(超过${params.build_flow_timeout}s未达到最低流量，流速未达标禁止加热)`,
         stopPump: true,
       })
     } else notifyStatusChange(dNo)
