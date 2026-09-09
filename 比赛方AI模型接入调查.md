@@ -42,6 +42,40 @@
 4. **概率较低：只给裸权重或数据集，要求现场完整训练。**4 小时赛制、现场提供“服务软件”和考查 HTTP 调用，都更符合调用现成推理服务。材料也没有写训练、标注或精度训练指标。
 5. **没有证据支持：一定是 YOLO。**YOLO 主要用于图像目标检测，而当前大纲列出的赛题硬件核心是温度、压力、流量等传感器。除非现场任务书新增图像任务，否则不应预先绑定 YOLO 的图片上传协议或输出框格式。
 
+## 上一届 YOLO 交付物提供的新证据
+
+项目中的 `yolo_model/yolo11-flask.py` 和 `yolo_model/yolo11n.pt` 来自提交 `2ab866c`（“学长上次比赛的模型”），可以确认上一届采用过以下交付方式：
+
+- `yolo11n.pt`：约 5.6 MB 的 Ultralytics YOLO11n 检测权重；文件名与官方 COCO 预训练模型一致，脚本没有包含训练流程；
+- `yolo11-flask.py`：负责加载权重并启动 Flask HTTP 服务；
+- 服务监听 `localhost:5000`，接口为 `POST /infer`；
+- 请求体格式为 `{ "image": "<Base64图片或data:image前缀>" }`；
+- 响应包含 `inference_results`（类别、置信度、类别编号）和 `processed_image`（画框后的 Base64 JPEG）。
+
+这使“今年继续提供 YOLO 权重 + Python HTTP 包装脚本”的可能性明显提高，但仍不能证明今年接口完全相同。尤其是今年大纲以温度、压力、流量传感器为核心，现场任务书仍可能更换权重、识别对象、路径或请求字段。
+
+### 去年脚本的启动方法
+
+当前电脑默认 Python 3.13 已有 Flask、Flask-CORS、OpenCV、NumPy 和 PyTorch，唯独缺少 `ultralytics`，所以现在直接启动会报 `ModuleNotFoundError: No module named 'ultralytics'`。
+
+联网准备阶段可执行：
+
+```powershell
+cd H:\Project\26InterThing\yolo_model
+py -m pip install ultralytics
+py .\yolo11-flask.py
+```
+
+必须从 `yolo_model` 目录运行，因为脚本使用相对路径 `./yolo11n.pt`。正常启动后访问地址是 `http://127.0.0.1:5000/infer`。可用一张本地图片测试：
+
+```powershell
+$image = [Convert]::ToBase64String([IO.File]::ReadAllBytes('H:\path\test.jpg'))
+$body = @{ image = $image } | ConvertTo-Json
+Invoke-RestMethod -Uri 'http://127.0.0.1:5000/infer' -Method Post -ContentType 'application/json' -Body $body
+```
+
+比赛现场禁止外网，因此不能把 `pip install` 留到比赛当天。应提前准备项目内独立虚拟环境或离线 wheel 包，并进行断网启动测试。
+
 ## 应该怎样使用这个模型
 
 赛前把应用层准备成一个可配置的 HTTP 适配器：
@@ -86,3 +120,5 @@
 4. `API文档.md` 仍写着“占位实现”，与代码已经支持配置 URL 后转发的现状不一致。
 
 因此，当前版本适合拿到接口文档后做一次简单 JSON 对接；如果赛题要求判定结果落库、触发告警或自动控制，还需按现场响应协议补齐最后一段业务闭环。最值得赛前继续准备的是“响应映射 + 结果落库/展示”这一层，但在组委会公布字段之前不宜写死。
+
+需要特别注意：**当前应用层接口不能直接调用去年的 YOLO 服务。**当前页面提交的是传感器历史行，后端默认发送 `{ "rows": [...] }`；去年的服务要求 `{ "image": "Base64..." }`。即使把 `AI_RECOGNIZE_URL` 改成 `http://127.0.0.1:5000/infer`，也只会收到 `No image provided`。若今年沿用去年接口，项目需要增加图片来源、Base64 转换、请求模板和识别图片/检测列表展示；传感器数据智能研判应继续走另一类接口，不能混为一个模型输入。
