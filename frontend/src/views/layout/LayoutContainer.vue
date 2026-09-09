@@ -241,6 +241,7 @@ onBeforeUnmount(() => {
                 v-else-if="status?.control && status.control.fsmState !== 'STOPPED'"
                 size="small"
                 :type="controlTagType(status.control)"
+                :title="controlTagText(status.control)"
                 style="margin-left: 4px; font-size: 11px;"
               >
                 {{ controlTagText(status.control) }}
@@ -257,6 +258,7 @@ onBeforeUnmount(() => {
                 v-else-if="status?.control"
                 size="small"
                 :type="controlTagType(status.control)"
+                :title="controlTagText(status.control)"
                 style="margin-left: 4px; font-size: 11px;"
               >
                 {{ controlTagText(status.control) }}
@@ -323,12 +325,16 @@ onBeforeUnmount(() => {
     display: flex;
     align-items: center;
     padding: 0 20px;
+    min-width: 0;
+    overflow: hidden;
 
     .device-status-bar {
       display: flex;
       align-items: center;
       gap: 12px;
       flex: 1;
+      min-width: 0;
+      overflow: hidden;
 
       .status-label {
         color: #606266;
@@ -340,7 +346,10 @@ onBeforeUnmount(() => {
         display: flex;
         align-items: center;
         gap: 12px;
-        flex-wrap: wrap;
+        flex: 1;
+        min-width: 0;
+        flex-wrap: nowrap;
+        overflow: hidden;
 
         .status-item {
           display: flex;
@@ -349,12 +358,18 @@ onBeforeUnmount(() => {
           padding: 2px 8px;
           background-color: #f5f7fa;
           border-radius: 4px;
+          flex: 0 1 auto;
+          min-width: 0;
+          max-width: 100%;
+          overflow: hidden;
+          white-space: nowrap;
 
           .status-dot {
             width: 8px;
             height: 8px;
             border-radius: 50%;
             display: inline-block;
+            flex-shrink: 0;
 
             &.online {
               background-color: #67c23a;
@@ -375,6 +390,21 @@ onBeforeUnmount(() => {
           .device-no {
             font-size: 12px;
             color: #606266;
+            flex-shrink: 0;
+          }
+
+          .el-tag {
+            flex: 1 1 auto;
+            min-width: 0;
+            overflow: hidden;
+          }
+
+          :deep(.el-tag__content) {
+            display: block;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
           }
         }
 
@@ -402,6 +432,8 @@ onBeforeUnmount(() => {
       display: flex;
       align-items: center;
       gap: 8px;
+      flex-shrink: 0;
+      white-space: nowrap;
 
       .alarm-label {
         color: #606266;
