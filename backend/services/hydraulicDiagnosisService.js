@@ -44,7 +44,7 @@ const DIAGNOSIS_METAS = {
     level: "error",
   },
   [DIAGNOSIS_CODES.HYDRAULIC_PUMP_ABNORMAL]: {
-    name: "疑似泵送异常",
+    name: "疑似水泵空转",
     detail: "压力与流量均处于超低水平，疑似水箱缺水、吸水口进气气阻或水泵空转未吸上水",
     level: "error",
   },

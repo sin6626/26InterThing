@@ -19,5 +19,5 @@ remotePort = 6183
 name = "mqtt_remote2"
 type = "tcp"
 localIP = "127.0.0.1"
-localPort = 3200
+localPort = 5173
 remotePort = 6001

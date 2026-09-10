@@ -54,11 +54,11 @@ const logApiCall = ({ config, response, statusCode }) => {
 // 后端接口约定 status=1 代表业务失败，这里统一转成 rejected Promise。
 request.interceptors.response.use(
   response => {
-    logApiCall({
-      config: response.config,
-      response: response.data,
-      statusCode: response.status,
-    })
+    // logApiCall({
+    //   config: response.config,
+    //   response: response.data,
+    //   statusCode: response.status,
+    // })
 
     if (response.data.status === 1) {
       if (!response.config?.silent) {
